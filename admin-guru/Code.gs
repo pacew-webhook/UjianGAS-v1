@@ -7,12 +7,18 @@ function sh_(name){ return ss_().getSheetByName(name); }
 function now_(){ return new Date(); }
 function id_(prefix){ return prefix+'-'+Utilities.getUuid().slice(0,8).toUpperCase(); }
 
-function doGet(){
-  return HtmlService.createTemplateFromFile('Index').evaluate()
-    .setTitle('Ujian GAS — Admin Guru')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+function doGet() {
+  return HtmlService
+    .createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('Ujian GAS');
 }
-function include_(name){ return HtmlService.createHtmlOutputFromFile(name).getContent(); }
+
+function include(filename) {
+  return HtmlService
+    .createHtmlOutputFromFile(filename)
+    .getContent();
+}
 
 function setupDatabase(){
   const schema={
