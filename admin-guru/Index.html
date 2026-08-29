@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html><head><base target="_top"><?!= include_('Style'); ?></head>
+<body>
+<div id="loginView" class="center">
+  <div class="login-card"><div class="logo">🎓</div><h1>Ujian GAS</h1><p>Portal Admin Guru</p>
+    <form id="loginForm"><input name="email" type="email" placeholder="Email Guru" required>
+      <input name="password" type="password" placeholder="Password" required>
+      <button>🔐 Masuk</button></form><small id="loginMsg"></small>
+  </div>
+</div>
+<div id="appView" hidden>
+<header><div class="brand">🎓 Ujian GAS <span>Admin Guru</span></div><div><span id="adminName"></span> <button class="ghost" onclick="logout()">Keluar</button></div></header>
+<div class="layout"><aside>
+<button onclick="page('dashboard')">🏠 Dashboard</button><button onclick="page('students')">👨‍🎓 Siswa</button>
+<button onclick="page('exams')">📝 Ujian</button><button onclick="page('questions')">❓ Kelola Soal</button>
+<button onclick="page('invite')">📩 Undangan</button><button onclick="page('results')">📊 Nilai</button>
+</aside><main>
+<section id="dashboard" class="page active"><h1>Dashboard</h1><div class="cards">
+<div class="card"><b id="studentsCount">0</b><span>Siswa</span></div><div class="card"><b id="examsCount">0</b><span>Ujian</span></div>
+<div class="card"><b id="questionsCount">0</b><span>Soal</span></div><div class="card"><b id="resultsCount">0</b><span>Hasil</span></div></div></section>
+
+<section id="students" class="page"><h1>👨‍🎓 Tambah Siswa</h1><form id="studentForm">
+<input name="Nama" placeholder="Nama siswa" required><input name="Email" type="email" placeholder="Email" required>
+<input name="PasswordHash" type="password" placeholder="Password awal siswa" required><input name="Kelas" placeholder="Kelas" required>
+<button>Simpan Siswa</button></form></section>
+
+<section id="exams" class="page"><h1>📝 Buat Ujian</h1><form id="examForm">
+<input name="NamaUjian" placeholder="Nama ujian" required><input name="Mapel" placeholder="Mata pelajaran" required>
+<input name="DurasiMenit" type="number" placeholder="Durasi menit" required><input name="Tanggal" type="date" required>
+<input name="JamMulai" type="time" required><input name="JamSelesai" type="time" required>
+<select name="Status"><option>DRAFT</option><option>ACTIVE</option><option>CLOSED</option></select><button>Simpan Ujian</button></form></section>
+
+<section id="questions" class="page"><div class="title-row"><h1>❓ Kelola Soal</h1><button onclick="newQuestion()">➕ Tambah Soal</button></div>
+<select id="questionExamFilter" onchange="loadQuestions()"></select><div id="questionList"></div>
+<div id="questionEditor" class="modal" hidden><div class="modal-box"><button class="close" onclick="closeQuestion()">×</button><h2 id="questionTitle">Tambah Soal</h2>
+<form id="questionForm"><input type="hidden" name="QuestionID"><select name="ExamID" id="questionExam" required></select>
+<textarea name="Pertanyaan" placeholder="Pertanyaan" required></textarea><input name="PilihanA" placeholder="Pilihan A" required>
+<input name="PilihanB" placeholder="Pilihan B" required><input name="PilihanC" placeholder="Pilihan C" required>
+<input name="PilihanD" placeholder="Pilihan D" required><select name="JawabanBenar"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+<input name="Bobot" type="number" value="1" min="1"><button>Simpan Soal</button></form></div></div></section>
+
+<section id="invite" class="page"><h1>📩 Kirim Undangan</h1><select id="inviteExam" onchange="loadInviteStudents()"></select>
+<div class="toolbar"><button onclick="selectAllStudents(true)">Pilih Semua</button><button class="ghost" onclick="selectAllStudents(false)">Batal</button></div>
+<div id="inviteStudents"></div><button onclick="sendInvitations()">📧 Kirim Undangan</button></section>
+
+<section id="results" class="page"><h1>📊 Nilai Siswa</h1><select id="resultExam" onchange="loadResults()"></select><div id="resultTable"></div></section>
+</main></div></div><?!= include_('JavaScript'); ?></body></html>

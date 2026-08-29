@@ -1,0 +1,31 @@
+<script>
+let TOKEN='',ADMIN=null,EXAMS=[],STUDENTS=[];
+const $=id=>document.getElementById(id);
+function formObj(f){return Object.fromEntries(new FormData(f).entries())}
+function call(fn,...args){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(e.message||e))[fn](...args))}
+function err(e){alert(typeof e==='string'?e:(e.message||'Terjadi kesalahan'))}
+function page(id){document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');if(id==='dashboard')dashboard();if(id==='questions')prepareQuestions();if(id==='invite')prepareInvite();if(id==='results')prepareResults()}
+$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginMsg').textContent='Memproses...';try{let d=formObj(e.target);let r=await call('loginAdmin',d.email,d.password);TOKEN=r.token;ADMIN=r.admin;sessionStorage.setItem('ugas_token',TOKEN);sessionStorage.setItem('ugas_admin',JSON.stringify(ADMIN));startApp()}catch(x){$('loginMsg').textContent=x}};
+function startApp(){$('loginView').hidden=true;$('appView').hidden=false;$('adminName').textContent=ADMIN?.Nama||'Guru';dashboard()}
+async function logout(){try{await call('logoutAdmin',TOKEN)}catch(e){}sessionStorage.clear();location.reload()}
+async function dashboard(){try{let d=await call('getDashboard',TOKEN);$('studentsCount').textContent=d.students;$('examsCount').textContent=d.exams;$('questionsCount').textContent=d.questions;$('resultsCount').textContent=d.results}catch(e){err(e)}}
+$('studentForm').onsubmit=async e=>{e.preventDefault();try{await call('addStudent',TOKEN,formObj(e.target));alert('Siswa berhasil ditambahkan');e.target.reset();dashboard()}catch(x){err(x)}};
+$('examForm').onsubmit=async e=>{e.preventDefault();try{await call('createExam',TOKEN,formObj(e.target));alert('Ujian berhasil dibuat');e.target.reset();await loadExams()}catch(x){err(x)}};
+async function loadExams(){EXAMS=await call('getExams',TOKEN);return EXAMS}
+function options(list,placeholder){return `<option value="">${placeholder}</option>`+list.map(x=>`<option value="${x.ExamID}">${x.NamaUjian}</option>`).join('')}
+async function prepareQuestions(){await loadExams();$('questionExamFilter').innerHTML=options(EXAMS,'Semua ujian');$('questionExam').innerHTML=options(EXAMS,'Pilih ujian');loadQuestions()}
+async function loadQuestions(){try{let list=await call('getQuestions',TOKEN,$('questionExamFilter').value);$('questionList').innerHTML=list.length?list.map(q=>`<div class="item"><h3>${esc(q.Pertanyaan)}</h3><p>A. ${esc(q.PilihanA)} · B. ${esc(q.PilihanB)} · C. ${esc(q.PilihanC)} · D. ${esc(q.PilihanD)}</p><p>Jawaban: <b>${q.JawabanBenar}</b> | Bobot: ${q.Bobot}</p><div class="item-actions"><button onclick="editQuestion('${q.QuestionID}')">✏️ Edit</button><button class="danger" onclick="removeQuestion('${q.QuestionID}')">🗑️ Hapus</button></div></div>`).join(''):'<div class="item">Belum ada soal.</div>'}catch(e){err(e)}}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function newQuestion(){$('questionTitle').textContent='Tambah Soal';$('questionForm').reset();$('questionEditor').hidden=false}
+function closeQuestion(){$('questionEditor').hidden=true}
+async function editQuestion(id){try{let list=await call('getQuestions',TOKEN,'');let q=list.find(x=>x.QuestionID===id);let f=$('questionForm');Object.keys(q).forEach(k=>{if(f.elements[k])f.elements[k].value=q[k]});$('questionTitle').textContent='Edit Soal';$('questionEditor').hidden=false}catch(e){err(e)}}
+$('questionForm').onsubmit=async e=>{e.preventDefault();try{let d=formObj(e.target);if(d.QuestionID)await call('updateQuestion',TOKEN,d.QuestionID,d);else await call('addQuestion',TOKEN,d);alert('Soal berhasil disimpan');closeQuestion();loadQuestions();dashboard()}catch(x){err(x)}};
+async function removeQuestion(id){if(!confirm('Hapus soal ini?'))return;try{await call('deleteQuestion',TOKEN,id);loadQuestions();dashboard()}catch(e){err(e)}}
+async function prepareInvite(){await loadExams();$('inviteExam').innerHTML=options(EXAMS,'Pilih ujian');STUDENTS=await call('getStudents',TOKEN);loadInviteStudents()}
+function loadInviteStudents(){$('inviteStudents').innerHTML=STUDENTS.map(s=>`<label class="student-item"><input type="checkbox" value="${s.StudentID}"> <span><b>${esc(s.Nama)}</b><br>${esc(s.Email)} — ${esc(s.Kelas)}</span></label>`).join('')||'<div class="item">Belum ada siswa.</div>'}
+function selectAllStudents(v){document.querySelectorAll('#inviteStudents input').forEach(x=>x.checked=v)}
+async function sendInvitations(){let exam=$('inviteExam').value,ids=[...document.querySelectorAll('#inviteStudents input:checked')].map(x=>x.value);if(!exam)return alert('Pilih ujian');if(!ids.length)return alert('Pilih minimal satu siswa');try{let r=await call('sendInvitation',TOKEN,exam,ids);alert(`Undangan dibuat untuk ${r.total} siswa. Email terkirim: ${r.emailSent}`)}catch(e){err(e)}}
+async function prepareResults(){await loadExams();$('resultExam').innerHTML=options(EXAMS,'Semua ujian');loadResults()}
+async function loadResults(){try{let list=await call('getResults',TOKEN,$('resultExam').value);$('resultTable').innerHTML=list.length?'<table><tr><th>Nama</th><th>Kelas</th><th>Benar</th><th>Salah</th><th>Nilai</th><th>Status</th><th>Waktu</th></tr>'+list.map(r=>`<tr><td>${esc(r.Nama)}</td><td>${esc(r.Kelas)}</td><td>${r.Benar}</td><td>${r.Salah}</td><td><b>${r.Nilai}</b></td><td>${esc(r.Status)}</td><td>${esc(r.Waktu)}</td></tr>`).join('')+'</table>':'<div class="item">Belum ada hasil ujian.</div>'}catch(e){err(e)}}
+(async()=>{TOKEN=sessionStorage.getItem('ugas_token')||'';try{ADMIN=JSON.parse(sessionStorage.getItem('ugas_admin')||'null')}catch(e){}if(TOKEN&&ADMIN){try{await call('getDashboard',TOKEN);startApp()}catch(e){sessionStorage.clear()}}})();
+</script>
