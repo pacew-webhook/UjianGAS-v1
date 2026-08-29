@@ -3,7 +3,22 @@
 <head>
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <?!= include('Style'); ?>
+  <!-- CSS ditanam langsung agar tidak bergantung pada file include -->
+<style>
+:root{--bg:#f4f7fb;--panel:#fff;--text:#172033;--muted:#64748b;--line:#e2e8f0;--primary:#2563eb;--primary2:#1d4ed8;--danger:#dc2626;--success:#059669;--warning:#d97706;--shadow:0 12px 30px rgba(15,23,42,.07)}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--text)}body{font-size:14px}button,input,select,textarea{font:inherit}button{border:0;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}input,select,textarea{width:100%;border:1px solid var(--line);background:#fff;border-radius:12px;padding:11px 13px;outline:none;color:var(--text)}input:focus,select:focus,textarea:focus{border-color:#93c5fd;box-shadow:0 0 0 3px #2563eb14}textarea{min-height:105px;resize:vertical}label{display:grid;gap:7px;font-weight:700;color:#334155}.muted{color:var(--muted)}.eyebrow{font-size:11px;letter-spacing:.12em;font-weight:800;color:var(--primary)}h1,h2,h3,p{margin-top:0}.page h1{margin-bottom:5px;font-size:28px}.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}.primary,.ghost,.danger-btn,.small-btn{border-radius:11px;padding:10px 14px;font-weight:750}.primary{background:var(--primary);color:#fff}.primary:hover{background:var(--primary2)}.primary.big{width:100%;padding:13px}.ghost{background:#eef4ff;color:#1d4ed8}.danger-btn{background:#fee2e2;color:#b91c1c}.small-btn{background:#f1f5f9;color:#334155;padding:7px 10px;font-size:12px}.full{width:100%;margin-top:14px}
+.login-screen{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 15% 10%,#dbeafe 0,transparent 35%),radial-gradient(circle at 85% 90%,#e0e7ff 0,transparent 35%),var(--bg)}.login-card{width:min(430px,100%);background:#fff;border:1px solid #e5e7eb;border-radius:24px;padding:32px;box-shadow:0 25px 70px rgba(15,23,42,.12)}.login-card .logo{text-align:center;font-size:48px;margin-bottom:4px}.login-card h1{text-align:center;margin-bottom:5px}.login-card>.muted{text-align:center;margin-bottom:25px}.login-card form{display:grid;gap:15px}.form-msg{min-height:22px;margin-top:12px;text-align:center;color:#dc2626;font-weight:650}
+.topbar{height:68px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 22px;position:sticky;top:0;z-index:20}.brand{display:flex;align-items:center;gap:10px}.brand-icon{font-size:28px}.brand strong{display:block}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}.top-actions{display:flex;align-items:center;gap:10px}.admin-name{font-weight:700}.badge{background:#ecfdf5;color:#047857;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800}
+.app-layout{display:flex;min-height:calc(100vh - 68px)}.sidebar{width:225px;background:#fff;border-right:1px solid var(--line);padding:15px;display:flex;flex-direction:column;gap:6px}.sidebar button{width:100%;text-align:left;padding:11px 12px;border-radius:11px;background:transparent;color:#475569;font-weight:700}.sidebar button:hover,.sidebar button.active{background:#eff6ff;color:#1d4ed8}.sidebar button span{margin-left:5px}main{width:100%;max-width:1250px;margin:0 auto;padding:28px}.page{display:none}.page.active{display:block}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;margin-bottom:20px}.stat-card{background:#fff;border:1px solid #e8edf3;border-radius:18px;padding:18px;display:flex;align-items:center;gap:13px;box-shadow:var(--shadow)}.stat-icon{width:45px;height:45px;border-radius:14px;display:grid;place-items:center;background:#eff6ff;font-size:21px}.stat-card span,.stat-card small{display:block;color:var(--muted)}.stat-card b{display:block;font-size:27px;margin:2px 0}.stat-card small{font-size:11px}.dashboard-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px}.panel{background:#fff;border:1px solid #e8edf3;border-radius:18px;padding:18px;box-shadow:var(--shadow)}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}.panel-head h3{margin:0}.quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.quick-grid button{padding:14px;border-radius:12px;background:#f8fafc;border:1px solid var(--line);text-align:left;font-weight:700;color:#334155}.status-list{display:grid;gap:12px}.status-list div{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid #f1f5f9}.status-list div:last-child{border-bottom:0}.status-list strong{color:var(--success)}
+.toolbar{display:flex;gap:10px;margin-bottom:14px}.toolbar .search{max-width:450px}.table-wrap{background:#fff;border:1px solid #e8edf3;border-radius:18px;overflow:auto;box-shadow:var(--shadow)}table{width:100%;border-collapse:collapse;min-width:700px}th,td{padding:12px 14px;text-align:left;border-bottom:1px solid #eef2f7;vertical-align:middle}th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;background:#f8fafc}tbody tr:hover{background:#fbfdff}.actions{display:flex;gap:6px;flex-wrap:wrap}.status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}.status.active,.status.published,.status.invited{background:#dcfce7;color:#166534}.status.inactive,.status.closed{background:#fee2e2;color:#991b1b}.status.draft{background:#fef3c7;color:#92400e}
+.item-card{background:#fff;border:1px solid #e8edf3;border-radius:18px;padding:17px;margin-bottom:12px;box-shadow:var(--shadow)}.item-top{display:flex;justify-content:space-between;gap:15px}.item-card h3{margin:0 0 5px}.meta{color:var(--muted);font-size:12px}.question-text{font-size:15px;font-weight:700;line-height:1.5;margin:10px 0}.options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.option{padding:9px 10px;border-radius:10px;background:#f8fafc;border:1px solid #edf2f7}.option.correct{background:#ecfdf5;border-color:#a7f3d0}.item-actions{display:flex;gap:7px;margin-top:13px}
+.invite-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}.select-row{display:flex;gap:7px;margin:12px 0}.student-item{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid #eef2f7;border-radius:10px;margin-bottom:7px}.student-item input{width:auto}.field{margin-bottom:12px}.empty{padding:30px;text-align:center;color:var(--muted)}.hint{font-size:12px;color:var(--muted)}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;padding:20px;overflow:auto}.modal-card{width:min(700px,100%);margin:40px auto;background:#fff;border-radius:20px;padding:24px;position:relative;box-shadow:0 30px 90px rgba(0,0,0,.2)}.modal-close{position:absolute;right:12px;top:10px;background:#f1f5f9;color:#475569;border-radius:10px;width:34px;height:34px;font-size:22px}.modal-title{margin-bottom:18px}.modal-form{display:grid;gap:13px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:5px}.check-row{display:flex;gap:8px;align-items:center}.check-row input{width:auto}.toast{position:fixed;right:20px;bottom:20px;z-index:100;background:#172033;color:#fff;padding:12px 15px;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2);max-width:360px}.loading{position:fixed;inset:0;background:rgba(255,255,255,.65);z-index:90;display:grid;place-items:center;align-content:center;gap:8px;color:#334155;font-weight:800}.spinner{width:30px;height:30px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.dashboard-grid,.invite-layout{grid-template-columns:1fr}.sidebar{width:195px}main{padding:20px}.top-actions .badge{display:none}}
+@media(max-width:650px){.topbar{padding:0 12px}.admin-name{display:none}.app-layout{display:block}.sidebar{position:fixed;left:0;right:0;bottom:0;width:100%;height:62px;z-index:30;display:flex;flex-direction:row;overflow-x:auto;padding:6px;border-right:0;border-top:1px solid var(--line)}.sidebar button{min-width:82px;text-align:center;padding:7px 5px;font-size:11px}.sidebar button span{display:block;margin:2px 0 0}.page-head{display:block}.page-head>button{margin-top:10px}.cards{gap:9px}.stat-card{padding:12px}.stat-icon{width:38px;height:38px;font-size:18px}.stat-card b{font-size:23px}.dashboard-grid{gap:10px}main{padding:16px;padding-bottom:82px}.toolbar{display:grid}.toolbar .search{max-width:none}.form-grid,.options,.quick-grid{grid-template-columns:1fr}.modal{padding:10px}.modal-card{margin:15px auto;padding:18px}}
+</style>
+
 </head>
 <body>
 
@@ -102,6 +117,126 @@
 <div id="toast" class="toast" hidden></div>
 <div id="loading" class="loading" hidden><div class="spinner"></div><span>Memproses…</span></div>
 
-<?!= include('JavaScript'); ?>
+<!-- JavaScript ditanam langsung agar tidak bergantung pada file include -->
+<script>
+let TOKEN = '', ADMIN = null;
+let EXAMS = [], STUDENTS = [], QUESTIONS = [], RESULTS = [], ADMINS = [];
+const $ = id => document.getElementById(id);
+const esc = v => String(v == null ? '' : v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
+const msg = e => e?.message || String(e || 'Terjadi kesalahan');
+
+function call(fn, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(e => reject(new Error(msg(e))))[fn](...args);
+  });
+}
+
+function busy(on) { $('loading').hidden = !on; }
+function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(window.__toast); window.__toast = setTimeout(() => $('toast').hidden = true, 2600); }
+function showLogin(text='') { $('loginView').hidden = false; $('appView').hidden = true; $('loginMsg').textContent = text; }
+function showApp() { $('loginView').hidden = true; $('appView').hidden = false; $('adminName').textContent = ADMIN?.Nama || 'Guru'; $('adminRole').textContent = ADMIN?.Role || 'ADMIN'; }
+
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  try {
+    busy(true); $('loginMsg').textContent = '';
+    const r = await call('loginAdmin', f.get('email'), f.get('password'));
+    if (!r?.token) throw new Error('Login gagal.');
+    TOKEN = r.token; ADMIN = r.admin;
+    sessionStorage.setItem('ugas_token', TOKEN);
+    sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+    showApp(); page('dashboard');
+  } catch (e) { $('loginMsg').textContent = msg(e); }
+  finally { busy(false); }
+});
+
+async function logout() {
+  try { await call('logoutAdmin', TOKEN); } catch(e) {}
+  TOKEN=''; ADMIN=null; sessionStorage.clear(); showLogin();
+}
+
+function page(id) {
+  document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.sidebar button').forEach(x => x.classList.toggle('active', x.dataset.page === id));
+  $(id).classList.add('active');
+  const loaders = {dashboard,students:loadStudents,exams:loadExams,questions:questions,invite:invite,results:results,reminders:loadReminders,admins:loadAdmins};
+  if (loaders[id]) loaders[id]();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function dashboard() {
+  try {
+    const d = await call('getDashboard', TOKEN);
+    $('studentsCount').textContent=d.students||0; $('examsCount').textContent=d.exams||0; $('questionsCount').textContent=d.questions||0; $('resultsCount').textContent=d.results||0;
+    $('activeStudents').textContent=(d.activeStudents||0)+' aktif'; $('publishedExams').textContent=(d.publishedExams||0)+' published';
+  } catch(e) { if(/Sesi/.test(msg(e))) { sessionStorage.clear(); showLogin(msg(e)); } }
+}
+
+/* STUDENTS */
+async function loadStudents() { try { STUDENTS=await call('getStudents',TOKEN); renderStudents(); } catch(e){ toast(msg(e)); } }
+function renderStudents() {
+  const q=($('studentSearch')?.value||'').toLowerCase(); const st=$('studentStatusFilter')?.value||'';
+  const data=STUDENTS.filter(s => (!st||String(s.Status).toUpperCase()===st) && [s.Nama,s.Email,s.Kelas].join(' ').toLowerCase().includes(q));
+  $('studentsTable').innerHTML = data.length ? `<table><thead><tr><th>Nama</th><th>Email</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${data.map(s=>`<tr><td><b>${esc(s.Nama)}</b></td><td>${esc(s.Email||'-')}</td><td>${esc(s.Kelas||'-')}</td><td>${statusBadge(s.Status)}</td><td class="actions"><button class="small-btn" onclick="openStudentModal('${esc(s.StudentID)}')">Edit</button><button class="danger-btn" onclick="removeStudent('${esc(s.StudentID)}')">Hapus</button></td></tr>`).join('')}</tbody></table>` : empty('Belum ada data siswa.');
+}
+function openStudentModal(id='') {
+  const s=STUDENTS.find(x=>String(x.StudentID)===String(id))||{};
+  openModal(`<h2 class="modal-title">${id?'Edit Siswa':'Tambah Siswa'}</h2><form id="studentForm" class="modal-form"><div class="form-grid"><label>Nama<input name="Nama" value="${esc(s.Nama||'')}" required></label><label>Email<input type="email" name="Email" value="${esc(s.Email||'')}"></label><label>Kelas<input name="Kelas" value="${esc(s.Kelas||'')}" placeholder="Contoh: XII IPA 1"></label><label>Status<select name="Status"><option ${String(s.Status||'ACTIVE').toUpperCase()==='ACTIVE'?'selected':''}>ACTIVE</option><option ${String(s.Status||'').toUpperCase()==='INACTIVE'?'selected':''}>INACTIVE</option></select></label></div><label>Password ${id?'<span class="hint">Kosongkan jika tidak diubah.</span>':''}<input type="password" name="Password" autocomplete="new-password"></label><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);
+  $('studentForm').onsubmit=async e=>{e.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(e.target));if(id)await call('updateStudent',TOKEN,id,d);else await call('addStudent',TOKEN,d);closeModal();toast('Data siswa tersimpan.');await loadStudents();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};
+}
+async function removeStudent(id){if(!confirm('Hapus siswa ini?'))return;try{busy(true);await call('deleteStudent',TOKEN,id);toast('Siswa dihapus.');await loadStudents();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
+
+/* EXAMS */
+async function loadExams(){try{EXAMS=await call('getExams',TOKEN);renderExams();fillExamSelects();}catch(e){toast(msg(e));}}
+function renderExams(){const q=($('examSearch')?.value||'').toLowerCase(),st=$('examStatusFilter')?.value||'';const data=EXAMS.filter(x=>(!st||String(x.Status).toUpperCase()===st)&&[x.NamaUjian,x.Mapel].join(' ').toLowerCase().includes(q));$('examsList').innerHTML=data.length?data.map(e=>`<div class="item-card"><div class="item-top"><div><h3>${esc(e.NamaUjian)}</h3><div class="meta">${esc(e.Mapel||'Tanpa mapel')} • ${esc(e.DurasiMenit)} menit</div><div class="meta">📅 ${esc(e.Tanggal)} • ${esc(e.JamMulai)} – ${esc(e.JamSelesai)}</div></div><div>${statusBadge(e.Status)}</div></div><div class="item-actions"><button class="small-btn" onclick="openExamModal('${esc(e.ExamID)}')">Edit</button><button class="small-btn" onclick="page('questions');setTimeout(()=>{if($('questionExamFilter')){$('questionExamFilter').value='${esc(e.ExamID)}';loadQuestions()}},150)">Kelola Soal</button><button class="danger-btn" onclick="removeExam('${esc(e.ExamID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada ujian.');}
+function openExamModal(id=''){const e=EXAMS.find(x=>String(x.ExamID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Ujian':'Buat Ujian'}</h2><form id="examForm" class="modal-form"><label>Nama Ujian<input name="NamaUjian" value="${esc(e.NamaUjian||'')}" required></label><div class="form-grid"><label>Mapel<input name="Mapel" value="${esc(e.Mapel||'')}" placeholder="Matematika"></label><label>Durasi (menit)<input type="number" name="DurasiMenit" min="1" value="${esc(e.DurasiMenit||60)}" required></label><label>Tanggal<input type="date" name="Tanggal" value="${esc(formatDateInput(e.Tanggal))}" required></label><label>Status<select name="Status"><option ${String(e.Status||'DRAFT').toUpperCase()==='DRAFT'?'selected':''}>DRAFT</option><option ${String(e.Status||'').toUpperCase()==='PUBLISHED'?'selected':''}>PUBLISHED</option><option ${String(e.Status||'').toUpperCase()==='CLOSED'?'selected':''}>CLOSED</option></select></label><label>Jam Mulai<input type="time" name="JamMulai" value="${esc(formatTimeInput(e.JamMulai))}" required></label><label>Jam Selesai<input type="time" name="JamSelesai" value="${esc(formatTimeInput(e.JamSelesai))}" required></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);$('examForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(ev.target));if(id)await call('updateExam',TOKEN,id,d);else await call('createExam',TOKEN,d);closeModal();toast('Ujian tersimpan.');await loadExams();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};}
+async function removeExam(id){if(!confirm('Hapus ujian ini? Data soal dan hasil yang terkait tidak ikut dihapus otomatis.'))return;try{busy(true);await call('deleteExam',TOKEN,id);toast('Ujian dihapus.');await loadExams();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
+function fillExamSelects(){const opts=(all='Semua ujian')=>`<option value="">${all}</option>`+EXAMS.map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('');if($('questionExamFilter'))$('questionExamFilter').innerHTML=opts();if($('inviteExam'))$('inviteExam').innerHTML=opts('Pilih ujian');if($('resultExam'))$('resultExam').innerHTML=opts();if($('reminderExamFilter'))$('reminderExamFilter').innerHTML=opts();}
+
+/* QUESTIONS */
+async function questions(){try{if(!EXAMS.length)await loadExams();fillExamSelects();await loadQuestions();}catch(e){toast(msg(e));}}
+async function loadQuestions(){try{QUESTIONS=await call('getQuestions',TOKEN,$('questionExamFilter')?.value||'');renderQuestions();}catch(e){toast(msg(e));}}
+function renderQuestions(){const q=($('questionSearch')?.value||'').toLowerCase();const data=QUESTIONS.filter(x=>String(x.Pertanyaan).toLowerCase().includes(q));$('questionList').innerHTML=data.length?data.map(x=>`<div class="item-card"><div class="item-top"><div><div class="meta">${esc(examName(x.ExamID))} • Bobot ${esc(x.Bobot||1)}</div><div class="question-text">${esc(x.Pertanyaan)}</div></div><span class="status published">${esc(x.JawabanBenar)}</span></div><div class="options"><div class="option ${x.JawabanBenar==='A'?'correct':''}"><b>A.</b> ${esc(x.PilihanA)}</div><div class="option ${x.JawabanBenar==='B'?'correct':''}"><b>B.</b> ${esc(x.PilihanB)}</div><div class="option ${x.JawabanBenar==='C'?'correct':''}"><b>C.</b> ${esc(x.PilihanC)}</div><div class="option ${x.JawabanBenar==='D'?'correct':''}"><b>D.</b> ${esc(x.PilihanD)}</div></div><div class="item-actions"><button class="small-btn" onclick="openQuestionModal('${esc(x.QuestionID)}')">Edit</button><button class="danger-btn" onclick="removeQuestion('${esc(x.QuestionID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada soal untuk filter ini.');}
+function openQuestionModal(id=''){const q=QUESTIONS.find(x=>String(x.QuestionID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Soal':'Tambah Soal'}</h2><form id="questionForm" class="modal-form"><label>Ujian<select name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}" ${String(q.ExamID)===String(e.ExamID)?'selected':''}>${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>Pertanyaan<textarea name="Pertanyaan" required>${esc(q.Pertanyaan||'')}</textarea></label><div class="form-grid"><label>Pilihan A<input name="PilihanA" value="${esc(q.PilihanA||'')}" required></label><label>Pilihan B<input name="PilihanB" value="${esc(q.PilihanB||'')}" required></label><label>Pilihan C<input name="PilihanC" value="${esc(q.PilihanC||'')}" required></label><label>Pilihan D<input name="PilihanD" value="${esc(q.PilihanD||'')}" required></label><label>Jawaban Benar<select name="JawabanBenar"><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>Bobot<input type="number" name="Bobot" min="0.1" step="0.1" value="${esc(q.Bobot||1)}"></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);if(q.JawabanBenar)$('questionForm').JawabanBenar.value=q.JawabanBenar;$('questionForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(ev.target));if(id)await call('updateQuestion',TOKEN,id,d);else await call('addQuestion',TOKEN,d);closeModal();toast('Soal tersimpan.');await loadQuestions();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};}
+async function removeQuestion(id){if(!confirm('Hapus soal ini?'))return;try{busy(true);await call('deleteQuestion',TOKEN,id);toast('Soal dihapus.');await loadQuestions();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
+
+/* INVITATIONS */
+async function invite(){try{if(!EXAMS.length)await loadExams();if(!STUDENTS.length)await loadStudents();fillExamSelects();renderInviteStudents();await loadInvitations();}catch(e){toast(msg(e));}}
+function renderInviteStudents(){const list=$('inviteStudents');list.innerHTML=STUDENTS.length?STUDENTS.map(s=>`<label class="student-item"><input type="checkbox" value="${esc(s.StudentID)}"> <span><b>${esc(s.Nama)}</b><br><small>${esc(s.Kelas||'-')} • ${esc(s.Email||'tanpa email')}</small></span></label>`).join(''):empty('Belum ada siswa.');}
+function selectAllStudents(v){document.querySelectorAll('#inviteStudents input[type=checkbox]').forEach(x=>x.checked=v)}
+async function sendInvitations(){const exam=$('inviteExam').value,ids=[...document.querySelectorAll('#inviteStudents input:checked')].map(x=>x.value);if(!exam)return toast('Pilih ujian.');if(!ids.length)return toast('Pilih siswa.');try{busy(true);const r=await call('sendInvitation',TOKEN,exam,ids);toast(`Undangan tersimpan: ${r.total||0}, email terkirim: ${r.emailSent||0}`);await loadInvitations();}catch(e){toast(msg(e));}finally{busy(false);}}
+async function loadInvitations(){try{const data=await call('getInvitations',TOKEN,$('inviteExam')?.value||'');$('invitationList').innerHTML=data.length?data.slice().reverse().map(i=>`<div class="item-card"><b>${esc(i.NamaSiswa)}</b><div class="meta">${esc(i.NamaUjian)} • ${esc(i.Email||'-')}</div><div style="margin-top:8px">${statusBadge(i.Status)} <button class="danger-btn" style="float:right" onclick="removeInvitation('${esc(i.InviteID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada undangan.');}catch(e){toast(msg(e));}}
+async function removeInvitation(id){if(!confirm('Hapus undangan ini?'))return;try{busy(true);await call('deleteInvitation',TOKEN,id);await loadInvitations();toast('Undangan dihapus.');}catch(e){toast(msg(e));}finally{busy(false);}}
+
+/* RESULTS */
+async function results(){try{if(!EXAMS.length)await loadExams();fillExamSelects();await loadResults();}catch(e){toast(msg(e));}}
+async function loadResults(){try{RESULTS=await call('getResults',TOKEN,$('resultExam')?.value||'');renderResults();}catch(e){toast(msg(e));}}
+function renderResults(){const q=($('resultSearch')?.value||'').toLowerCase();const data=RESULTS.filter(x=>[x.Nama,x.Email,x.Kelas,x.NamaUjian].join(' ').toLowerCase().includes(q));$('resultTable').innerHTML=data.length?`<table><thead><tr><th>Siswa</th><th>Ujian</th><th>Benar</th><th>Salah</th><th>Nilai</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${data.map(x=>`<tr><td><b>${esc(x.Nama)}</b><br><span class="meta">${esc(x.Kelas||'')} • ${esc(x.Email||'')}</span></td><td>${esc(x.NamaUjian)}</td><td>${esc(x.Benar||0)}</td><td>${esc(x.Salah||0)}</td><td><b>${esc(x.Nilai||0)}</b></td><td>${statusBadge(x.Status||'SUBMITTED')}</td><td>${esc(formatDateTime(x.Waktu))}</td></tr>`).join('')}</tbody></table>`:empty('Belum ada hasil ujian.');}
+
+/* REMINDERS */
+async function loadReminders(){try{if(!EXAMS.length)await loadExams();fillExamSelects();const data=await call('getReminders',TOKEN,$('reminderExamFilter')?.value||'');$('reminderList').innerHTML=data.length?data.slice().reverse().map(r=>`<div class="item-card"><div class="item-top"><div><h3>${esc(r.Pesan)}</h3><div class="meta">${esc(r.NamaUjian)} • Target: ${esc(r.Target||'SEMUA')}</div></div><button class="danger-btn" onclick="removeReminder('${esc(r.ReminderID)}')">Hapus</button></div><div class="meta" style="margin-top:8px">${esc(formatDateTime(r.Waktu))}</div></div>`).join(''):empty('Belum ada pengingat.');}catch(e){toast(msg(e));}}
+function openReminderModal(){openModal(`<h2 class="modal-title">Tambah Pengingat</h2><form id="reminderForm" class="modal-form"><label>Ujian<select name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>Pesan<textarea name="Pesan" required placeholder="Contoh: cek soal sebelum ujian dimulai."></textarea></label><div class="form-grid"><label>Target<input name="Target" value="SEMUA"></label><label>Waktu<input type="datetime-local" name="Waktu"></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);$('reminderForm').onsubmit=async e=>{e.preventDefault();try{busy(true);await call('addReminder',TOKEN,Object.fromEntries(new FormData(e.target)));closeModal();toast('Pengingat tersimpan.');await loadReminders();}catch(err){toast(msg(err));}finally{busy(false);}};}
+async function removeReminder(id){if(!confirm('Hapus pengingat?'))return;try{busy(true);await call('deleteReminder',TOKEN,id);await loadReminders();toast('Pengingat dihapus.');}catch(e){toast(msg(e));}finally{busy(false);}}
+
+/* ADMINS */
+async function loadAdmins(){try{ADMINS=await call('getAdmins',TOKEN);$('adminTable').innerHTML=ADMINS.length?`<table><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead><tbody>${ADMINS.map(a=>`<tr><td><b>${esc(a.Nama)}</b></td><td>${esc(a.Email)}</td><td>${esc(a.Role)}</td><td>${statusBadge(a.Status)}</td><td class="actions"><button class="small-btn" onclick="openAdminModal('${esc(a.AdminID)}')">Edit</button><button class="danger-btn" onclick="removeAdmin('${esc(a.AdminID)}')">Hapus</button></td></tr>`).join('')}</tbody></table>`:empty('Belum ada admin.');}catch(e){toast(msg(e));}}
+function openAdminModal(id=''){const a=ADMINS.find(x=>String(x.AdminID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Admin':'Tambah Admin'}</h2><form id="adminForm" class="modal-form"><div class="form-grid"><label>Nama<input name="Nama" value="${esc(a.Nama||'')}" required></label><label>Email<input type="email" name="Email" value="${esc(a.Email||'')}" required></label><label>Role<select name="Role"><option ${String(a.Role||'GURU')==='GURU'?'selected':''}>GURU</option><option ${String(a.Role||'')==='ADMIN'?'selected':''}>ADMIN</option></select></label><label>Status<select name="Status"><option ${String(a.Status||'ACTIVE')==='ACTIVE'?'selected':''}>ACTIVE</option><option ${String(a.Status||'')==='INACTIVE'?'selected':''}>INACTIVE</option></select></label></div><label>Password <span class="hint">${id?'Kosongkan jika tidak diubah.':'Wajib untuk admin baru.'}</span><input type="password" name="Password" ${id?'':'required'} autocomplete="new-password"></label><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);$('adminForm').onsubmit=async e=>{e.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(e.target));if(id)await call('updateAdmin',TOKEN,id,d);else await call('addAdmin',TOKEN,d);closeModal();toast('Admin tersimpan.');await loadAdmins();}catch(err){toast(msg(err));}finally{busy(false);}};}
+async function removeAdmin(id){if(!confirm('Hapus akun admin ini?'))return;try{busy(true);await call('deleteAdmin',TOKEN,id);await loadAdmins();toast('Admin dihapus.');}catch(e){toast(msg(e));}finally{busy(false);}}
+
+/* MODAL / HELPERS */
+function openModal(html){$('modalContent').innerHTML=html;$('modal').hidden=false;document.body.style.overflow='hidden'}
+function closeModal(){$('modal').hidden=true;document.body.style.overflow=''}
+$('modal').addEventListener('click',e=>{if(e.target===$('modal'))closeModal()});
+function empty(text){return `<div class="empty">${esc(text)}</div>`}
+function statusBadge(v){const s=String(v||'-').toLowerCase().replace(/\s+/g,'-');return `<span class="status ${s}">${esc(v||'-')}</span>`}
+function examName(id){return EXAMS.find(e=>String(e.ExamID)===String(id))?.NamaUjian||id||'-'}
+function formatDateInput(v){if(!v)return '';const d=new Date(v);if(!isNaN(d.getTime()))return d.toISOString().slice(0,10);return String(v).slice(0,10)}
+function formatTimeInput(v){if(!v)return '';const s=String(v);const m=s.match(/(\d{1,2}):(\d{2})/);return m?m[1].padStart(2,'0')+':'+m[2]:s.slice(0,5)}
+function formatDateTime(v){if(!v)return '-';const d=new Date(v);return isNaN(d.getTime())?String(v):d.toLocaleString('id-ID')}
+
+(async()=>{try{TOKEN=sessionStorage.getItem('ugas_token')||'';ADMIN=JSON.parse(sessionStorage.getItem('ugas_admin')||'null');if(TOKEN&&ADMIN){await call('getDashboard',TOKEN);showApp();page('dashboard')}else showLogin();}catch(e){TOKEN='';ADMIN=null;sessionStorage.clear();showLogin();}})();
+</script>
+
 </body>
 </html>
