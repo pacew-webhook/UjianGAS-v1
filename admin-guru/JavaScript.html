@@ -1,827 +1,261 @@
 <script>
-'use strict';
+let TOKEN='', ADMIN=null, EXAMS=[], STUDENTS=[];
+const $=id=>document.getElementById(id);
+const msg=e=>typeof e==='string'?e:(e?.message||'Terjadi kesalahan');
 
-/* =========================
-   GLOBAL
-========================= */
-
-let TOKEN = '';
-let ADMIN = null;
-let EXAMS = [];
-let STUDENTS = [];
-
-const $ = id => document.getElementById(id);
-
-function formObj(form) {
-  return Object.fromEntries(new FormData(form).entries());
-}
-
-function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  }[c]));
-}
-
-function message(error) {
-  if (!error) return 'Terjadi kesalahan.';
-  return typeof error === 'string'
-    ? error
-    : (error.message || String(error));
-}
-
-
-/* =========================
-   GOOGLE APPS SCRIPT API
-========================= */
-
-function call(fn, ...args) {
-  return new Promise((resolve, reject) => {
-    try {
-      google.script.run
-        .withSuccessHandler(resolve)
-        .withFailureHandler(error => {
-          reject(new Error(message(error)));
-        })[fn](...args);
-    } catch (error) {
-      reject(error);
-    }
+function call(fn,...args){
+  return new Promise((ok,no)=>{
+    google.script.run
+      .withSuccessHandler(ok)
+      .withFailureHandler(e=>no(new Error(msg(e))))[fn](...args);
   });
 }
 
-
-/* =========================
-   SESSION
-========================= */
-
-function saveSession() {
-  sessionStorage.setItem('ugas_token', TOKEN);
-  sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+function showLogin(text=''){
+  $('loginView').hidden=false;
+  $('appView').hidden=true;
+  $('loginMsg').textContent=text;
 }
 
-function clearSession() {
-  TOKEN = '';
-  ADMIN = null;
-
-  sessionStorage.removeItem('ugas_token');
-  sessionStorage.removeItem('ugas_admin');
-}
-
-function isSessionError(error) {
-  const text = message(error).toLowerCase();
-
-  return text.includes('sesi berakhir') ||
-         text.includes('session') ||
-         text.includes('login kembali');
-}
-
-async function api(fn, ...args) {
-  try {
-    return await call(fn, ...args);
-  } catch (error) {
-    if (isSessionError(error)) {
-      clearSession();
-      showLogin('Sesi telah berakhir. Silakan login kembali.');
-    }
-    throw error;
-  }
-}
-
-
-/* =========================
-   VIEW
-========================= */
-
-function showLogin(text = '') {
-  if ($('loginView')) $('loginView').hidden = false;
-  if ($('appView')) $('appView').hidden = true;
-  if ($('loginMsg')) $('loginMsg').textContent = text;
-}
-
-function showApp() {
-  if ($('loginView')) $('loginView').hidden = true;
-  if ($('appView')) $('appView').hidden = false;
-}
-
-function startApp() {
-  if (!TOKEN || !ADMIN) {
-    clearSession();
-    showLogin('Session tidak valid.');
-    return;
-  }
-
-  showApp();
-
-  if ($('adminName')) {
-    $('adminName').textContent = ADMIN.Nama || 'Guru';
-  }
-
+function startApp(){
+  $('loginView').hidden=true;
+  $('appView').hidden=false;
+  $('adminName').textContent=ADMIN?.Nama||'Guru';
   page('dashboard');
 }
 
+/* LOGIN */
+$('loginForm').onsubmit=async e=>{
+  e.preventDefault();
+  const f=new FormData(e.target);
+  const email=f.get('email'), password=f.get('password');
 
-/* =========================
-   NAVIGATION
-========================= */
+  try{
+    $('loginMsg').textContent='Memproses...';
 
-function page(id) {
-  document.querySelectorAll('.page')
-    .forEach(p => p.classList.remove('active'));
+    const r=await call('loginAdmin',email,password);
 
-  const target = $(id);
+    if(!r?.token||!r?.admin) throw new Error('Login gagal');
 
-  if (!target) {
-    console.error('Halaman tidak ditemukan:', id);
-    return;
-  }
+    TOKEN=r.token;
+    ADMIN=r.admin;
 
-  target.classList.add('active');
-
-  if (id === 'dashboard') dashboard();
-  if (id === 'questions') prepareQuestions();
-  if (id === 'invite') prepareInvite();
-  if (id === 'results') prepareResults();
-}
-
-
-/* =========================
-   LOGIN
-========================= */
-
-function setupLogin() {
-  const form = $('loginForm');
-
-  if (!form) return;
-
-  form.onsubmit = async event => {
-    event.preventDefault();
-
-    const loginMsg = $('loginMsg');
-    const button = form.querySelector('button[type="submit"]');
-
-    const data = formObj(form);
-
-    const email = String(data.email || '').trim();
-    const password = String(data.password || '');
-
-    if (!email) {
-      loginMsg.textContent = 'Email wajib diisi.';
-      return;
-    }
-
-    if (!password) {
-      loginMsg.textContent = 'Password wajib diisi.';
-      return;
-    }
-
-    try {
-      button.disabled = true;
-      loginMsg.textContent = 'Memproses...';
-
-      clearSession();
-
-      const result = await call(
-        'loginAdmin',
-        email,
-        password
-      );
-
-      if (!result || !result.token || !result.admin) {
-        throw new Error('Login gagal.');
-      }
-
-      TOKEN = result.token;
-      ADMIN = result.admin;
-
-      saveSession();
-
-      loginMsg.textContent = '';
-
-      startApp();
-
-    } catch (error) {
-
-      clearSession();
-
-      // PENTING: Password salah tetap di login
-      showLogin();
-
-      loginMsg.textContent = message(error);
-
-    } finally {
-
-      button.disabled = false;
-    }
-  };
-}
-
-
-/* =========================
-   LOGOUT
-========================= */
-
-async function logout() {
-  if (!confirm('Keluar dari aplikasi?')) return;
-
-  try {
-    if (TOKEN) {
-      await call('logoutAdmin', TOKEN);
-    }
-  } catch (error) {
-    console.warn(error);
-  }
-
-  clearSession();
-  showLogin();
-}
-
-
-/* =========================
-   DASHBOARD
-========================= */
-
-async function dashboard() {
-  if (!TOKEN) return;
-
-  try {
-    const data = await api('getDashboard', TOKEN);
-
-    if ($('studentsCount'))
-      $('studentsCount').textContent = data.students ?? 0;
-
-    if ($('examsCount'))
-      $('examsCount').textContent = data.exams ?? 0;
-
-    if ($('questionsCount'))
-      $('questionsCount').textContent = data.questions ?? 0;
-
-    if ($('resultsCount'))
-      $('resultsCount').textContent = data.results ?? 0;
-
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-
-/* =========================
-   STUDENTS
-========================= */
-
-function setupStudentForm() {
-  const form = $('studentForm');
-
-  if (!form) return;
-
-  form.onsubmit = async event => {
-    event.preventDefault();
-
-    try {
-      const data = formObj(form);
-
-      if (!data.Nama)
-        throw new Error('Nama siswa wajib diisi.');
-
-      if (!data.Email)
-        throw new Error('Email siswa wajib diisi.');
-
-      await api('addStudent', TOKEN, data);
-
-      alert('Siswa berhasil ditambahkan.');
-
-      form.reset();
-
-      dashboard();
-
-    } catch (error) {
-      alert(message(error));
-    }
-  };
-}
-
-
-/* =========================
-   EXAMS
-========================= */
-
-function setupExamForm() {
-  const form = $('examForm');
-
-  if (!form) return;
-
-  form.onsubmit = async event => {
-    event.preventDefault();
-
-    try {
-      const data = formObj(form);
-
-      if (!data.NamaUjian)
-        throw new Error('Nama ujian wajib diisi.');
-
-      await api('createExam', TOKEN, data);
-
-      alert('Ujian berhasil dibuat.');
-
-      form.reset();
-
-      await loadExams();
-      dashboard();
-
-    } catch (error) {
-      alert(message(error));
-    }
-  };
-}
-
-async function loadExams() {
-  EXAMS = await api('getExams', TOKEN);
-
-  if (!Array.isArray(EXAMS)) {
-    EXAMS = [];
-  }
-
-  return EXAMS;
-}
-
-function examOptions(placeholder) {
-  return `
-    <option value="">${esc(placeholder)}</option>
-    ${EXAMS.map(exam => `
-      <option value="${esc(exam.ExamID)}">
-        ${esc(exam.NamaUjian)}
-      </option>
-    `).join('')}
-  `;
-}
-
-
-/* =========================
-   QUESTIONS
-========================= */
-
-async function prepareQuestions() {
-  try {
-    await loadExams();
-
-    if ($('questionExamFilter')) {
-      $('questionExamFilter').innerHTML =
-        examOptions('Semua ujian');
-    }
-
-    if ($('questionExam')) {
-      $('questionExam').innerHTML =
-        examOptions('Pilih ujian');
-    }
-
-    loadQuestions();
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-async function loadQuestions() {
-  try {
-    const examId =
-      $('questionExamFilter')?.value || '';
-
-    const questions =
-      await api('getQuestions', TOKEN, examId);
-
-    const container = $('questionList');
-
-    if (!container) return;
-
-    if (!questions.length) {
-      container.innerHTML =
-        '<div class="item">Belum ada soal.</div>';
-      return;
-    }
-
-    container.innerHTML = questions.map(q => `
-      <div class="item">
-
-        <h3>${esc(q.Pertanyaan)}</h3>
-
-        <p>
-          A. ${esc(q.PilihanA)}<br>
-          B. ${esc(q.PilihanB)}<br>
-          C. ${esc(q.PilihanC)}<br>
-          D. ${esc(q.PilihanD)}
-        </p>
-
-        <p>
-          Jawaban:
-          <b>${esc(q.JawabanBenar)}</b>
-          |
-          Bobot: ${esc(q.Bobot)}
-        </p>
-
-        <div class="item-actions">
-
-          <button
-            type="button"
-            onclick="editQuestion('${q.QuestionID}')"
-          >
-            ✏️ Edit
-          </button>
-
-          <button
-            type="button"
-            class="danger"
-            onclick="removeQuestion('${q.QuestionID}')"
-          >
-            🗑️ Hapus
-          </button>
-
-        </div>
-
-      </div>
-    `).join('');
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-function newQuestion() {
-  const form = $('questionForm');
-
-  if (form) {
-    form.reset();
-
-    if (form.elements.QuestionID) {
-      form.elements.QuestionID.value = '';
-    }
-  }
-
-  if ($('questionTitle'))
-    $('questionTitle').textContent = 'Tambah Soal';
-
-  if ($('questionEditor'))
-    $('questionEditor').hidden = false;
-}
-
-function closeQuestion() {
-  if ($('questionEditor'))
-    $('questionEditor').hidden = true;
-}
-
-async function editQuestion(id) {
-  try {
-    const questions =
-      await api('getQuestions', TOKEN, '');
-
-    const question =
-      questions.find(q => q.QuestionID === id);
-
-    if (!question)
-      throw new Error('Soal tidak ditemukan.');
-
-    const form = $('questionForm');
-
-    Object.keys(question).forEach(key => {
-      if (form.elements[key]) {
-        form.elements[key].value =
-          question[key] ?? '';
-      }
-    });
-
-    $('questionTitle').textContent = 'Edit Soal';
-
-    $('questionEditor').hidden = false;
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-function setupQuestionForm() {
-  const form = $('questionForm');
-
-  if (!form) return;
-
-  form.onsubmit = async event => {
-    event.preventDefault();
-
-    try {
-      const data = formObj(form);
-
-      if (!data.ExamID)
-        throw new Error('Pilih ujian.');
-
-      if (!data.Pertanyaan)
-        throw new Error('Pertanyaan wajib diisi.');
-
-      if (data.QuestionID) {
-        await api(
-          'updateQuestion',
-          TOKEN,
-          data.QuestionID,
-          data
-        );
-      } else {
-        await api(
-          'addQuestion',
-          TOKEN,
-          data
-        );
-      }
-
-      alert('Soal berhasil disimpan.');
-
-      closeQuestion();
-
-      loadQuestions();
-
-      dashboard();
-
-    } catch (error) {
-      alert(message(error));
-    }
-  };
-}
-
-async function removeQuestion(id) {
-  if (!confirm('Hapus soal ini?')) return;
-
-  try {
-    await api('deleteQuestion', TOKEN, id);
-
-    loadQuestions();
-
-    dashboard();
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-
-/* =========================
-   INVITATIONS
-========================= */
-
-async function prepareInvite() {
-  try {
-    await loadExams();
-
-    if ($('inviteExam')) {
-      $('inviteExam').innerHTML =
-        examOptions('Pilih ujian');
-    }
-
-    STUDENTS =
-      await api('getStudents', TOKEN);
-
-    if (!Array.isArray(STUDENTS)) {
-      STUDENTS = [];
-    }
-
-    loadInviteStudents();
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-function loadInviteStudents() {
-  const container = $('inviteStudents');
-
-  if (!container) return;
-
-  if (!STUDENTS.length) {
-    container.innerHTML =
-      '<div class="item">Belum ada siswa.</div>';
-    return;
-  }
-
-  container.innerHTML =
-    STUDENTS.map(student => `
-      <label class="student-item">
-
-        <input
-          type="checkbox"
-          value="${esc(student.StudentID)}"
-        >
-
-        <span>
-          <b>${esc(student.Nama)}</b>
-          <br>
-          ${esc(student.Email)}
-          —
-          ${esc(student.Kelas)}
-        </span>
-
-      </label>
-    `).join('');
-}
-
-function selectAllStudents(value) {
-  document
-    .querySelectorAll('#inviteStudents input')
-    .forEach(input => {
-      input.checked = value;
-    });
-}
-
-async function sendInvitations() {
-  const examId =
-    $('inviteExam')?.value || '';
-
-  const studentIds =
-    [...document.querySelectorAll(
-      '#inviteStudents input:checked'
-    )].map(input => input.value);
-
-  if (!examId) {
-    alert('Pilih ujian.');
-    return;
-  }
-
-  if (!studentIds.length) {
-    alert('Pilih minimal satu siswa.');
-    return;
-  }
-
-  try {
-    const result = await api(
-      'sendInvitation',
-      TOKEN,
-      examId,
-      studentIds
-    );
-
-    alert(
-      `Undangan berhasil dibuat.
-
-Total siswa: ${result.total}
-
-Email terkirim: ${result.emailSent}`
-    );
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-
-/* =========================
-   RESULTS
-========================= */
-
-async function prepareResults() {
-  try {
-    await loadExams();
-
-    if ($('resultExam')) {
-      $('resultExam').innerHTML =
-        examOptions('Semua ujian');
-    }
-
-    loadResults();
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-async function loadResults() {
-  try {
-    const examId =
-      $('resultExam')?.value || '';
-
-    const results =
-      await api(
-        'getResults',
-        TOKEN,
-        examId
-      );
-
-    const container =
-      $('resultTable');
-
-    if (!container) return;
-
-    if (!results.length) {
-      container.innerHTML =
-        '<div class="item">Belum ada hasil ujian.</div>';
-      return;
-    }
-
-    container.innerHTML = `
-      <table>
-
-        <thead>
-          <tr>
-            <th>Nama</th>
-            <th>Kelas</th>
-            <th>Benar</th>
-            <th>Salah</th>
-            <th>Nilai</th>
-            <th>Status</th>
-            <th>Waktu</th>
-          </tr>
-        </thead>
-
-        <tbody>
-
-          ${results.map(result => `
-            <tr>
-
-              <td>${esc(result.Nama)}</td>
-              <td>${esc(result.Kelas)}</td>
-              <td>${esc(result.Benar)}</td>
-              <td>${esc(result.Salah)}</td>
-
-              <td>
-                <b>${esc(result.Nilai)}</b>
-              </td>
-
-              <td>${esc(result.Status)}</td>
-              <td>${esc(result.Waktu)}</td>
-
-            </tr>
-          `).join('')}
-
-        </tbody>
-
-      </table>
-    `;
-
-  } catch (error) {
-    alert(message(error));
-  }
-}
-
-
-/* =========================
-   RESTORE SESSION
-========================= */
-
-async function restoreSession() {
-
-  showLogin();
-
-  try {
-
-    TOKEN =
-      sessionStorage.getItem('ugas_token') || '';
-
-    ADMIN =
-      JSON.parse(
-        sessionStorage.getItem('ugas_admin') || 'null'
-      );
-
-  } catch (error) {
-
-    clearSession();
-
-    return;
-  }
-
-  if (!TOKEN || !ADMIN) return;
-
-  try {
-
-    await call(
-      'getDashboard',
-      TOKEN
-    );
+    sessionStorage.setItem('ugas_token',TOKEN);
+    sessionStorage.setItem('ugas_admin',JSON.stringify(ADMIN));
 
     startApp();
 
-  } catch (error) {
-
-    clearSession();
-
-    showLogin();
+  }catch(err){
+    TOKEN='';
+    ADMIN=null;
+    showLogin(msg(err));
   }
+};
+
+/* LOGOUT */
+async function logout(){
+  try{ await call('logoutAdmin',TOKEN); }catch(e){}
+  sessionStorage.clear();
+  showLogin();
 }
 
+/* MENU */
+function page(id){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  $(id).classList.add('active');
 
-/* =========================
-   START
-========================= */
+  if(id==='dashboard') dashboard();
+  if(id==='questions') questions();
+  if(id==='invite') invite();
+  if(id==='results') results();
+}
 
-document.addEventListener(
-  'DOMContentLoaded',
-  async () => {
+/* DASHBOARD */
+async function dashboard(){
+  try{
+    const d=await call('getDashboard',TOKEN);
+    $('studentsCount').textContent=d.students||0;
+    $('examsCount').textContent=d.exams||0;
+    $('questionsCount').textContent=d.questions||0;
+    $('resultsCount').textContent=d.results||0;
+  }catch(e){ showLogin(msg(e)); }
+}
 
-    setupLogin();
+/* TAMBAH SISWA */
+$('studentForm').onsubmit=async e=>{
+  e.preventDefault();
+  try{
+    await call('addStudent',TOKEN,
+      Object.fromEntries(new FormData(e.target)));
+    alert('Siswa berhasil ditambahkan');
+    e.target.reset();
+    dashboard();
+  }catch(err){alert(msg(err));}
+};
 
-    setupStudentForm();
+/* BUAT UJIAN */
+$('examForm').onsubmit=async e=>{
+  e.preventDefault();
+  try{
+    await call('createExam',TOKEN,
+      Object.fromEntries(new FormData(e.target)));
+    alert('Ujian berhasil dibuat');
+    e.target.reset();
+  }catch(err){alert(msg(err));}
+};
 
-    setupExamForm();
+async function loadExams(){
+  EXAMS=await call('getExams',TOKEN);
+}
 
-    setupQuestionForm();
+function examOptions(text){
+  return `<option value="">${text}</option>`+
+    EXAMS.map(x=>`<option value="${x.ExamID}">${x.NamaUjian}</option>`).join('');
+}
 
-    await restoreSession();
+/* SOAL */
+async function questions(){
+  try{
+    await loadExams();
+    $('questionExamFilter').innerHTML=examOptions('Semua ujian');
+    $('questionExam').innerHTML=examOptions('Pilih ujian');
+    loadQuestions();
+  }catch(e){alert(msg(e));}
+}
 
+async function loadQuestions(){
+  try{
+    const data=await call('getQuestions',TOKEN,$('questionExamFilter').value);
+
+    $('questionList').innerHTML=data.length
+      ?data.map(q=>`
+        <div class="item">
+          <b>${q.Pertanyaan}</b><br>
+          A. ${q.PilihanA}<br>
+          B. ${q.PilihanB}<br>
+          C. ${q.PilihanC}<br>
+          D. ${q.PilihanD}<br>
+          Jawaban: <b>${q.JawabanBenar}</b>
+          <button onclick="removeQuestion('${q.QuestionID}')">🗑️ Hapus</button>
+        </div>`).join('')
+      :'<div class="item">Belum ada soal.</div>';
+
+  }catch(e){alert(msg(e));}
+}
+
+function newQuestion(){
+  $('questionForm').reset();
+  $('questionEditor').hidden=false;
+}
+
+function closeQuestion(){
+  $('questionEditor').hidden=true;
+}
+
+$('questionForm').onsubmit=async e=>{
+  e.preventDefault();
+
+  try{
+    const d=Object.fromEntries(new FormData(e.target));
+
+    if(d.QuestionID)
+      await call('updateQuestion',TOKEN,d.QuestionID,d);
+    else
+      await call('addQuestion',TOKEN,d);
+
+    alert('Soal berhasil disimpan');
+    closeQuestion();
+    loadQuestions();
+
+  }catch(err){alert(msg(err));}
+};
+
+async function removeQuestion(id){
+  if(!confirm('Hapus soal?'))return;
+
+  try{
+    await call('deleteQuestion',TOKEN,id);
+    loadQuestions();
+  }catch(e){alert(msg(e));}
+}
+
+/* UNDANGAN */
+async function invite(){
+  try{
+    await loadExams();
+    STUDENTS=await call('getStudents',TOKEN);
+
+    $('inviteExam').innerHTML=examOptions('Pilih ujian');
+
+    $('inviteStudents').innerHTML=STUDENTS.map(s=>`
+      <label class="student-item">
+        <input type="checkbox" value="${s.StudentID}">
+        ${s.Nama} - ${s.Kelas}
+      </label>`).join('');
+
+  }catch(e){alert(msg(e));}
+}
+
+function selectAllStudents(v){
+  document.querySelectorAll('#inviteStudents input')
+    .forEach(x=>x.checked=v);
+}
+
+async function sendInvitations(){
+  const exam=$('inviteExam').value;
+  const ids=[...document.querySelectorAll('#inviteStudents input:checked')]
+    .map(x=>x.value);
+
+  if(!exam)return alert('Pilih ujian');
+  if(!ids.length)return alert('Pilih siswa');
+
+  try{
+    const r=await call('sendInvitation',TOKEN,exam,ids);
+    alert(`Berhasil: ${r.total} siswa`);
+  }catch(e){alert(msg(e));}
+}
+
+/* NILAI */
+async function results(){
+  try{
+    await loadExams();
+    $('resultExam').innerHTML=examOptions('Semua ujian');
+    loadResults();
+  }catch(e){alert(msg(e));}
+}
+
+async function loadResults(){
+  try{
+    const data=await call('getResults',TOKEN,$('resultExam').value);
+
+    $('resultTable').innerHTML=data.length
+      ?'<table>'+data.map(x=>`
+        <tr>
+          <td>${x.Nama}</td>
+          <td>${x.Kelas}</td>
+          <td>${x.Nilai}</td>
+          <td>${x.Status}</td>
+        </tr>`).join('')+'</table>'
+      :'<div class="item">Belum ada nilai.</div>';
+
+  }catch(e){alert(msg(e));}
+}
+
+/* RESTORE SESSION */
+(async()=>{
+  try{
+    TOKEN=sessionStorage.getItem('ugas_token')||'';
+    ADMIN=JSON.parse(sessionStorage.getItem('ugas_admin')||'null');
+
+    if(TOKEN&&ADMIN){
+      await call('getDashboard',TOKEN);
+      startApp();
+    }else{
+      showLogin();
+    }
+  }catch(e){
+    sessionStorage.clear();
+    showLogin();
   }
-);
-
+})();
                </script>
