@@ -1,1829 +1,698 @@
 <script>
 'use strict';
 
-/* =========================================================
-   UIJAN GAS - ADMIN GURU
-   JavaScript.html
-   ========================================================= */
-
-
-/* =========================================================
-   1. GLOBAL STATE
-   ========================================================= */
+/* =========================
+   GLOBAL
+========================= */
 
 let TOKEN = '';
 let ADMIN = null;
-
 let EXAMS = [];
 let STUDENTS = [];
 
-
-/* =========================================================
-   2. DOM HELPER
-   ========================================================= */
-
-function $(id) {
-  return document.getElementById(id);
-}
-
-
-/* =========================================================
-   3. FORM HELPER
-   ========================================================= */
+const $ = id => document.getElementById(id);
 
 function formObj(form) {
-  const formData = new FormData(form);
-  return Object.fromEntries(formData.entries());
+  return Object.fromEntries(new FormData(form).entries());
 }
-
-
-/* =========================================================
-   4. HTML ESCAPE
-   Mencegah input merusak HTML
-   ========================================================= */
 
 function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[c]));
+}
 
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+function message(error) {
+  if (!error) return 'Terjadi kesalahan.';
+  return typeof error === 'string'
+    ? error
+    : (error.message || String(error));
 }
 
 
-/* =========================================================
-   5. ERROR HELPER
-   ========================================================= */
+/* =========================
+   GOOGLE APPS SCRIPT API
+========================= */
 
-function getErrorMessage(error) {
-
-  if (!error) {
-    return 'Terjadi kesalahan.';
-  }
-
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  if (error.message) {
-    return error.message;
-  }
-
-  return String(error);
-}
-
-
-function showError(error) {
-
-  const message = getErrorMessage(error);
-
-  console.error('APPLICATION ERROR:', error);
-
-  alert(message);
-}
-
-
-/* =========================================================
-   6. GOOGLE APPS SCRIPT API
-   ========================================================= */
-
-function call(functionName, ...args) {
-
-  return new Promise(function(resolve, reject) {
-
+function call(fn, ...args) {
+  return new Promise((resolve, reject) => {
     try {
-
-      if (
-        typeof google === 'undefined' ||
-        !google.script ||
-        !google.script.run
-      ) {
-
-        reject(
-          new Error(
-            'Google Apps Script API tidak tersedia. ' +
-            'Pastikan aplikasi dibuka melalui URL Web App.'
-          )
-        );
-
-        return;
-      }
-
-
-      const runner = google.script.run
-
-        .withSuccessHandler(function(result) {
-
-          resolve(result);
-
-        })
-
-        .withFailureHandler(function(error) {
-
-          console.error(
-            'SERVER ERROR:',
-            functionName,
-            error
-          );
-
-          reject(
-            new Error(
-              getErrorMessage(error)
-            )
-          );
-
-        });
-
-
-      /*
-       Pemanggilan fungsi Google Apps Script
-      */
-
-      const serverFunction = runner[functionName];
-
-
-      if (typeof serverFunction !== 'function') {
-
-        reject(
-          new Error(
-            'Fungsi server tidak ditemukan: ' +
-            functionName
-          )
-        );
-
-        return;
-      }
-
-
-      serverFunction(...args);
-
-
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(error => {
+          reject(new Error(message(error)));
+        })[fn](...args);
     } catch (error) {
-
-      console.error(
-        'CLIENT ERROR:',
-        functionName,
-        error
-      );
-
       reject(error);
     }
-
   });
 }
 
 
-/* =========================================================
-   7. BUTTON LOADING
-   ========================================================= */
-
-function setButtonLoading(button, loading, loadingText) {
-
-  if (!button) return;
-
-
-  if (loading) {
-
-    if (!button.dataset.originalText) {
-
-      button.dataset.originalText =
-        button.innerHTML;
-    }
-
-
-    button.disabled = true;
-
-
-    button.innerHTML =
-      loadingText || 'Memproses...';
-
-
-  } else {
-
-    button.disabled = false;
-
-
-    if (button.dataset.originalText) {
-
-      button.innerHTML =
-        button.dataset.originalText;
-
-      delete button.dataset.originalText;
-    }
-  }
-}
-
-
-/* =========================================================
-   8. SESSION MANAGEMENT
-   ========================================================= */
+/* =========================
+   SESSION
+========================= */
 
 function saveSession() {
-
-  try {
-
-    sessionStorage.setItem(
-      'ugas_token',
-      TOKEN
-    );
-
-
-    sessionStorage.setItem(
-      'ugas_admin',
-      JSON.stringify(ADMIN)
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      'Gagal menyimpan session:',
-      error
-    );
-  }
+  sessionStorage.setItem('ugas_token', TOKEN);
+  sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
 }
 
-
 function clearSession() {
-
   TOKEN = '';
   ADMIN = null;
 
-
-  try {
-
-    sessionStorage.removeItem(
-      'ugas_token'
-    );
-
-
-    sessionStorage.removeItem(
-      'ugas_admin'
-    );
-
-
-  } catch (error) {
-
-    console.warn(
-      'Gagal menghapus session:',
-      error
-    );
-  }
+  sessionStorage.removeItem('ugas_token');
+  sessionStorage.removeItem('ugas_admin');
 }
-
-
-function loadSession() {
-
-  try {
-
-    TOKEN =
-      sessionStorage.getItem(
-        'ugas_token'
-      ) || '';
-
-
-    const adminData =
-      sessionStorage.getItem(
-        'ugas_admin'
-      );
-
-
-    ADMIN =
-      adminData
-        ? JSON.parse(adminData)
-        : null;
-
-
-  } catch (error) {
-
-    console.warn(
-      'Session rusak:',
-      error
-    );
-
-    clearSession();
-  }
-}
-
-
-/* =========================================================
-   9. SESSION ERROR DETECTOR
-   ========================================================= */
 
 function isSessionError(error) {
+  const text = message(error).toLowerCase();
 
-  const message =
-    getErrorMessage(error)
-      .toLowerCase();
-
-
-  return (
-    message.includes('sesi berakhir') ||
-    message.includes('session expired') ||
-    message.includes('session tidak valid') ||
-    message.includes('silakan login kembali')
-  );
+  return text.includes('sesi berakhir') ||
+         text.includes('session') ||
+         text.includes('login kembali');
 }
 
-
-/* =========================================================
-   10. SAFE API
-   ========================================================= */
-
-async function api(functionName, ...args) {
-
+async function api(fn, ...args) {
   try {
-
-    return await call(
-      functionName,
-      ...args
-    );
-
-
+    return await call(fn, ...args);
   } catch (error) {
-
     if (isSessionError(error)) {
-
       clearSession();
-
-      showLogin(
-        'Sesi Anda telah berakhir. Silakan login kembali.'
-      );
-
+      showLogin('Sesi telah berakhir. Silakan login kembali.');
     }
-
     throw error;
   }
 }
 
 
-/* =========================================================
-   11. VIEW CONTROL
-   ========================================================= */
+/* =========================
+   VIEW
+========================= */
 
-function showLogin(message) {
-
-  const loginView = $('loginView');
-  const appView = $('appView');
-
-
-  if (loginView) {
-    loginView.hidden = false;
-  }
-
-
-  if (appView) {
-    appView.hidden = true;
-  }
-
-
-  if (message && $('loginMsg')) {
-
-    $('loginMsg').textContent =
-      message;
-  }
+function showLogin(text = '') {
+  if ($('loginView')) $('loginView').hidden = false;
+  if ($('appView')) $('appView').hidden = true;
+  if ($('loginMsg')) $('loginMsg').textContent = text;
 }
-
 
 function showApp() {
-
-  const loginView = $('loginView');
-  const appView = $('appView');
-
-
-  if (loginView) {
-    loginView.hidden = true;
-  }
-
-
-  if (appView) {
-    appView.hidden = false;
-  }
+  if ($('loginView')) $('loginView').hidden = true;
+  if ($('appView')) $('appView').hidden = false;
 }
-
-
-/* =========================================================
-   12. PAGE NAVIGATION
-   ========================================================= */
-
-function page(id) {
-
-  const pages =
-    document.querySelectorAll('.page');
-
-
-  pages.forEach(function(item) {
-
-    item.classList.remove(
-      'active'
-    );
-
-  });
-
-
-  const target = $(id);
-
-
-  if (!target) {
-
-    console.warn(
-      'Halaman tidak ditemukan:',
-      id
-    );
-
-    return;
-  }
-
-
-  target.classList.add(
-    'active'
-  );
-
-
-  switch (id) {
-
-    case 'dashboard':
-
-      dashboard();
-
-      break;
-
-
-    case 'questions':
-
-      prepareQuestions();
-
-      break;
-
-
-    case 'invite':
-
-      prepareInvite();
-
-      break;
-
-
-    case 'results':
-
-      prepareResults();
-
-      break;
-  }
-}
-
-
-/* =========================================================
-   13. LOGIN
-   ========================================================= */
-
-function setupLogin() {
-
-  const form =
-    $('loginForm');
-
-
-  if (!form) {
-
-    console.warn(
-      'loginForm tidak ditemukan'
-    );
-
-    return;
-  }
-
-
-  form.addEventListener(
-    'submit',
-    async function(event) {
-
-      event.preventDefault();
-
-
-      const email =
-        String(
-          form.email?.value || ''
-        )
-          .trim()
-          .toLowerCase();
-
-
-      const password =
-        String(
-          form.password?.value || ''
-        );
-
-
-      const message =
-        $('loginMsg');
-
-
-      const button =
-        form.querySelector(
-          'button[type="submit"]'
-        );
-
-
-      /*
-       VALIDASI
-      */
-
-      if (!email) {
-
-        if (message) {
-
-          message.textContent =
-            'Email wajib diisi.';
-        }
-
-        return;
-      }
-
-
-      if (!password) {
-
-        if (message) {
-
-          message.textContent =
-            'Password wajib diisi.';
-        }
-
-        return;
-      }
-
-
-      /*
-       LOADING
-      */
-
-      if (message) {
-
-        message.textContent =
-          'Memproses login...';
-      }
-
-
-      setButtonLoading(
-        button,
-        true,
-        'Memproses...'
-      );
-
-
-      try {
-
-        /*
-         Hapus session lama terlebih dahulu
-        */
-
-        clearSession();
-
-
-        /*
-         LOGIN SERVER
-        */
-
-        const result =
-          await call(
-            'loginAdmin',
-            email,
-            password
-          );
-
-
-        /*
-         VALIDASI RESPONSE
-        */
-
-        if (!result) {
-
-          throw new Error(
-            'Server tidak memberikan respons.'
-          );
-        }
-
-
-        if (!result.token) {
-
-          throw new Error(
-            'Login gagal. Token tidak ditemukan.'
-          );
-        }
-
-
-        if (!result.admin) {
-
-          throw new Error(
-            'Login gagal. Data admin tidak ditemukan.'
-          );
-        }
-
-
-        /*
-         SIMPAN SESSION
-        */
-
-        TOKEN =
-          result.token;
-
-
-        ADMIN =
-          result.admin;
-
-
-        saveSession();
-
-
-        /*
-         CLEAR MESSAGE
-        */
-
-        if (message) {
-
-          message.textContent = '';
-        }
-
-
-        /*
-         MASUK APLIKASI
-        */
-
-        startApp();
-
-
-      } catch (error) {
-
-        console.error(
-          'LOGIN ERROR:',
-          error
-        );
-
-
-        /*
-         Hapus session jika gagal
-        */
-
-        clearSession();
-
-
-        /*
-         Tetap tampilkan halaman login
-        */
-
-        showLogin();
-
-
-        /*
-         Tampilkan error
-        */
-
-        if (message) {
-
-          message.textContent =
-            getErrorMessage(error);
-
-        } else {
-
-          showError(error);
-        }
-
-
-      } finally {
-
-        setButtonLoading(
-          button,
-          false
-        );
-      }
-
-    }
-  );
-}
-
-
-/* =========================================================
-   14. START APPLICATION
-   ========================================================= */
 
 function startApp() {
-
-  /*
-   Validasi session
-  */
-
   if (!TOKEN || !ADMIN) {
-
     clearSession();
-
-    showLogin(
-      'Session tidak valid. Silakan login kembali.'
-    );
-
+    showLogin('Session tidak valid.');
     return;
   }
-
-
-  /*
-   Tampilkan aplikasi
-  */
 
   showApp();
 
-
-  /*
-   Tampilkan nama admin
-  */
-
-  const adminName =
-    $('adminName');
-
-
-  if (adminName) {
-
-    adminName.textContent =
-      ADMIN.Nama || 'Guru';
+  if ($('adminName')) {
+    $('adminName').textContent = ADMIN.Nama || 'Guru';
   }
 
-
-  /*
-   Buka dashboard
-  */
-
-  dashboard();
+  page('dashboard');
 }
 
 
-/* =========================================================
-   15. LOGOUT
-   ========================================================= */
+/* =========================
+   NAVIGATION
+========================= */
 
-async function logout() {
+function page(id) {
+  document.querySelectorAll('.page')
+    .forEach(p => p.classList.remove('active'));
 
-  const confirmed =
-    confirm(
-      'Apakah Anda yakin ingin keluar?'
-    );
+  const target = $(id);
 
-
-  if (!confirmed) {
-
+  if (!target) {
+    console.error('Halaman tidak ditemukan:', id);
     return;
   }
 
+  target.classList.add('active');
 
-  try {
-
-    if (TOKEN) {
-
-      await call(
-        'logoutAdmin',
-        TOKEN
-      );
-    }
-
-
-  } catch (error) {
-
-    console.warn(
-      'Logout server gagal:',
-      error
-    );
-
-
-  } finally {
-
-    clearSession();
-
-    showLogin();
-
-  }
+  if (id === 'dashboard') dashboard();
+  if (id === 'questions') prepareQuestions();
+  if (id === 'invite') prepareInvite();
+  if (id === 'results') prepareResults();
 }
 
 
-/* =========================================================
-   16. DASHBOARD
-   ========================================================= */
+/* =========================
+   LOGIN
+========================= */
+
+function setupLogin() {
+  const form = $('loginForm');
+
+  if (!form) return;
+
+  form.onsubmit = async event => {
+    event.preventDefault();
+
+    const loginMsg = $('loginMsg');
+    const button = form.querySelector('button[type="submit"]');
+
+    const data = formObj(form);
+
+    const email = String(data.email || '').trim();
+    const password = String(data.password || '');
+
+    if (!email) {
+      loginMsg.textContent = 'Email wajib diisi.';
+      return;
+    }
+
+    if (!password) {
+      loginMsg.textContent = 'Password wajib diisi.';
+      return;
+    }
+
+    try {
+      button.disabled = true;
+      loginMsg.textContent = 'Memproses...';
+
+      clearSession();
+
+      const result = await call(
+        'loginAdmin',
+        email,
+        password
+      );
+
+      if (!result || !result.token || !result.admin) {
+        throw new Error('Login gagal.');
+      }
+
+      TOKEN = result.token;
+      ADMIN = result.admin;
+
+      saveSession();
+
+      loginMsg.textContent = '';
+
+      startApp();
+
+    } catch (error) {
+
+      clearSession();
+
+      // PENTING: Password salah tetap di login
+      showLogin();
+
+      loginMsg.textContent = message(error);
+
+    } finally {
+
+      button.disabled = false;
+    }
+  };
+}
+
+
+/* =========================
+   LOGOUT
+========================= */
+
+async function logout() {
+  if (!confirm('Keluar dari aplikasi?')) return;
+
+  try {
+    if (TOKEN) {
+      await call('logoutAdmin', TOKEN);
+    }
+  } catch (error) {
+    console.warn(error);
+  }
+
+  clearSession();
+  showLogin();
+}
+
+
+/* =========================
+   DASHBOARD
+========================= */
 
 async function dashboard() {
-
   if (!TOKEN) return;
 
-
   try {
+    const data = await api('getDashboard', TOKEN);
 
-    const data =
-      await api(
-        'getDashboard',
-        TOKEN
-      );
+    if ($('studentsCount'))
+      $('studentsCount').textContent = data.students ?? 0;
 
+    if ($('examsCount'))
+      $('examsCount').textContent = data.exams ?? 0;
 
-    if ($('studentsCount')) {
+    if ($('questionsCount'))
+      $('questionsCount').textContent = data.questions ?? 0;
 
-      $('studentsCount').textContent =
-        data.students ?? 0;
-    }
-
-
-    if ($('examsCount')) {
-
-      $('examsCount').textContent =
-        data.exams ?? 0;
-    }
-
-
-    if ($('questionsCount')) {
-
-      $('questionsCount').textContent =
-        data.questions ?? 0;
-    }
-
-
-    if ($('resultsCount')) {
-
-      $('resultsCount').textContent =
-        data.results ?? 0;
-    }
-
+    if ($('resultsCount'))
+      $('resultsCount').textContent = data.results ?? 0;
 
   } catch (error) {
-
-    /*
-     Jangan tampilkan error dua kali
-     jika session sudah habis
-    */
-
-    if (!isSessionError(error)) {
-
-      console.error(
-        'Dashboard error:',
-        error
-      );
-    }
+    console.error(error);
   }
 }
 
 
-/* =========================================================
-   17. STUDENT FORM
-   ========================================================= */
+/* =========================
+   STUDENTS
+========================= */
 
 function setupStudentForm() {
-
-  const form =
-    $('studentForm');
-
+  const form = $('studentForm');
 
   if (!form) return;
 
+  form.onsubmit = async event => {
+    event.preventDefault();
 
-  form.addEventListener(
-    'submit',
-    async function(event) {
+    try {
+      const data = formObj(form);
 
-      event.preventDefault();
+      if (!data.Nama)
+        throw new Error('Nama siswa wajib diisi.');
 
+      if (!data.Email)
+        throw new Error('Email siswa wajib diisi.');
 
-      const button =
-        form.querySelector(
-          'button[type="submit"]'
-        );
+      await api('addStudent', TOKEN, data);
 
+      alert('Siswa berhasil ditambahkan.');
 
-      try {
+      form.reset();
 
-        setButtonLoading(
-          button,
-          true,
-          'Menyimpan...'
-        );
+      dashboard();
 
-
-        const data =
-          formObj(form);
-
-
-        /*
-         Validasi sederhana
-        */
-
-        if (!data.Nama) {
-
-          throw new Error(
-            'Nama siswa wajib diisi.'
-          );
-        }
-
-
-        if (!data.Email) {
-
-          throw new Error(
-            'Email siswa wajib diisi.'
-          );
-        }
-
-
-        await api(
-          'addStudent',
-          TOKEN,
-          data
-        );
-
-
-        alert(
-          'Siswa berhasil ditambahkan.'
-        );
-
-
-        form.reset();
-
-
-        await dashboard();
-
-
-      } catch (error) {
-
-        showError(error);
-
-
-      } finally {
-
-        setButtonLoading(
-          button,
-          false
-        );
-      }
-
+    } catch (error) {
+      alert(message(error));
     }
-  );
+  };
 }
 
 
-/* =========================================================
-   18. EXAM FORM
-   ========================================================= */
+/* =========================
+   EXAMS
+========================= */
 
 function setupExamForm() {
-
-  const form =
-    $('examForm');
-
+  const form = $('examForm');
 
   if (!form) return;
 
+  form.onsubmit = async event => {
+    event.preventDefault();
 
-  form.addEventListener(
-    'submit',
-    async function(event) {
+    try {
+      const data = formObj(form);
 
-      event.preventDefault();
+      if (!data.NamaUjian)
+        throw new Error('Nama ujian wajib diisi.');
 
+      await api('createExam', TOKEN, data);
 
-      const button =
-        form.querySelector(
-          'button[type="submit"]'
-        );
+      alert('Ujian berhasil dibuat.');
 
+      form.reset();
 
-      try {
+      await loadExams();
+      dashboard();
 
-        setButtonLoading(
-          button,
-          true,
-          'Menyimpan...'
-        );
-
-
-        const data =
-          formObj(form);
-
-
-        if (!data.NamaUjian) {
-
-          throw new Error(
-            'Nama ujian wajib diisi.'
-          );
-        }
-
-
-        await api(
-          'createExam',
-          TOKEN,
-          data
-        );
-
-
-        alert(
-          'Ujian berhasil dibuat.'
-        );
-
-
-        form.reset();
-
-
-        await loadExams();
-
-
-        await dashboard();
-
-
-      } catch (error) {
-
-        showError(error);
-
-
-      } finally {
-
-        setButtonLoading(
-          button,
-          false
-        );
-      }
-
+    } catch (error) {
+      alert(message(error));
     }
-  );
+  };
 }
 
-
-/* =========================================================
-   19. LOAD EXAMS
-   ========================================================= */
-
 async function loadExams() {
-
-  EXAMS =
-    await api(
-      'getExams',
-      TOKEN
-    );
-
+  EXAMS = await api('getExams', TOKEN);
 
   if (!Array.isArray(EXAMS)) {
-
     EXAMS = [];
   }
-
 
   return EXAMS;
 }
 
-
-/* =========================================================
-   20. OPTIONS HELPER
-   ========================================================= */
-
-function options(list, placeholder) {
-
-  const safeList =
-    Array.isArray(list)
-      ? list
-      : [];
-
-
-  let html =
-    `<option value="">${esc(placeholder)}</option>`;
-
-
-  safeList.forEach(function(item) {
-
-    html += `
-      <option value="${esc(item.ExamID)}">
-        ${esc(item.NamaUjian)}
+function examOptions(placeholder) {
+  return `
+    <option value="">${esc(placeholder)}</option>
+    ${EXAMS.map(exam => `
+      <option value="${esc(exam.ExamID)}">
+        ${esc(exam.NamaUjian)}
       </option>
-    `;
-  });
-
-
-  return html;
+    `).join('')}
+  `;
 }
 
 
-/* =========================================================
-   21. QUESTIONS
-   ========================================================= */
+/* =========================
+   QUESTIONS
+========================= */
 
 async function prepareQuestions() {
-
   try {
-
     await loadExams();
 
-
-    const filter =
-      $('questionExamFilter');
-
-
-    const examSelect =
-      $('questionExam');
-
-
-    if (filter) {
-
-      filter.innerHTML =
-        options(
-          EXAMS,
-          'Semua ujian'
-        );
+    if ($('questionExamFilter')) {
+      $('questionExamFilter').innerHTML =
+        examOptions('Semua ujian');
     }
 
-
-    if (examSelect) {
-
-      examSelect.innerHTML =
-        options(
-          EXAMS,
-          'Pilih ujian'
-        );
+    if ($('questionExam')) {
+      $('questionExam').innerHTML =
+        examOptions('Pilih ujian');
     }
 
-
-    await loadQuestions();
-
+    loadQuestions();
 
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
-
-/* =========================================================
-   LOAD QUESTIONS
-   ========================================================= */
-
 async function loadQuestions() {
-
   try {
-
-    const filter =
-      $('questionExamFilter');
-
-
     const examId =
-      filter
-        ? filter.value
-        : '';
-
+      $('questionExamFilter')?.value || '';
 
     const questions =
-      await api(
-        'getQuestions',
-        TOKEN,
-        examId
-      );
+      await api('getQuestions', TOKEN, examId);
 
-
-    const container =
-      $('questionList');
-
+    const container = $('questionList');
 
     if (!container) return;
 
-
-    if (
-      !questions ||
-      !questions.length
-    ) {
-
+    if (!questions.length) {
       container.innerHTML =
         '<div class="item">Belum ada soal.</div>';
-
       return;
     }
 
+    container.innerHTML = questions.map(q => `
+      <div class="item">
 
-    container.innerHTML =
-      questions.map(function(question) {
+        <h3>${esc(q.Pertanyaan)}</h3>
 
-        return `
-          <div class="item">
+        <p>
+          A. ${esc(q.PilihanA)}<br>
+          B. ${esc(q.PilihanB)}<br>
+          C. ${esc(q.PilihanC)}<br>
+          D. ${esc(q.PilihanD)}
+        </p>
 
-            <h3>
-              ${esc(question.Pertanyaan)}
-            </h3>
+        <p>
+          Jawaban:
+          <b>${esc(q.JawabanBenar)}</b>
+          |
+          Bobot: ${esc(q.Bobot)}
+        </p>
 
-            <p>
-              <b>A.</b> ${esc(question.PilihanA)}
-              <br>
+        <div class="item-actions">
 
-              <b>B.</b> ${esc(question.PilihanB)}
-              <br>
+          <button
+            type="button"
+            onclick="editQuestion('${q.QuestionID}')"
+          >
+            ✏️ Edit
+          </button>
 
-              <b>C.</b> ${esc(question.PilihanC)}
-              <br>
+          <button
+            type="button"
+            class="danger"
+            onclick="removeQuestion('${q.QuestionID}')"
+          >
+            🗑️ Hapus
+          </button>
 
-              <b>D.</b> ${esc(question.PilihanD)}
-            </p>
+        </div>
 
-            <p>
-
-              Jawaban:
-              <b>
-                ${esc(question.JawabanBenar)}
-              </b>
-
-              |
-
-              Bobot:
-              ${esc(question.Bobot)}
-
-            </p>
-
-
-            <div class="item-actions">
-
-              <button
-                type="button"
-                onclick="editQuestion('${esc(question.QuestionID)}')"
-              >
-                ✏️ Edit
-              </button>
-
-
-              <button
-                type="button"
-                class="danger"
-                onclick="removeQuestion('${esc(question.QuestionID)}')"
-              >
-                🗑️ Hapus
-              </button>
-
-            </div>
-
-          </div>
-        `;
-
-      }).join('');
-
+      </div>
+    `).join('');
 
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
-
-
-/* =========================================================
-   NEW QUESTION
-   ========================================================= */
 
 function newQuestion() {
-
-  const form =
-    $('questionForm');
-
+  const form = $('questionForm');
 
   if (form) {
-
     form.reset();
 
-
-    if (
-      form.elements.QuestionID
-    ) {
-
-      form.elements.QuestionID.value =
-        '';
+    if (form.elements.QuestionID) {
+      form.elements.QuestionID.value = '';
     }
   }
 
+  if ($('questionTitle'))
+    $('questionTitle').textContent = 'Tambah Soal';
 
-  const title =
-    $('questionTitle');
-
-
-  if (title) {
-
-    title.textContent =
-      'Tambah Soal';
-  }
-
-
-  const editor =
-    $('questionEditor');
-
-
-  if (editor) {
-
-    editor.hidden = false;
-  }
+  if ($('questionEditor'))
+    $('questionEditor').hidden = false;
 }
-
-
-/* =========================================================
-   CLOSE QUESTION
-   ========================================================= */
 
 function closeQuestion() {
-
-  const editor =
-    $('questionEditor');
-
-
-  if (editor) {
-
-    editor.hidden = true;
-  }
+  if ($('questionEditor'))
+    $('questionEditor').hidden = true;
 }
-
-
-/* =========================================================
-   EDIT QUESTION
-   ========================================================= */
 
 async function editQuestion(id) {
-
   try {
-
     const questions =
-      await api(
-        'getQuestions',
-        TOKEN,
-        ''
-      );
-
+      await api('getQuestions', TOKEN, '');
 
     const question =
-      questions.find(function(item) {
+      questions.find(q => q.QuestionID === id);
 
-        return String(
-          item.QuestionID
-        ) === String(id);
+    if (!question)
+      throw new Error('Soal tidak ditemukan.');
 
-      });
+    const form = $('questionForm');
 
+    Object.keys(question).forEach(key => {
+      if (form.elements[key]) {
+        form.elements[key].value =
+          question[key] ?? '';
+      }
+    });
 
-    if (!question) {
+    $('questionTitle').textContent = 'Edit Soal';
 
-      throw new Error(
-        'Soal tidak ditemukan.'
-      );
-    }
-
-
-    const form =
-      $('questionForm');
-
-
-    if (!form) {
-
-      throw new Error(
-        'Form soal tidak ditemukan.'
-      );
-    }
-
-
-    Object.keys(question)
-      .forEach(function(key) {
-
-        if (
-          form.elements[key]
-        ) {
-
-          form.elements[key].value =
-            question[key] ?? '';
-        }
-
-      });
-
-
-    const title =
-      $('questionTitle');
-
-
-    if (title) {
-
-      title.textContent =
-        'Edit Soal';
-    }
-
-
-    const editor =
-      $('questionEditor');
-
-
-    if (editor) {
-
-      editor.hidden = false;
-    }
-
+    $('questionEditor').hidden = false;
 
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
-
-/* =========================================================
-   QUESTION FORM
-   ========================================================= */
-
 function setupQuestionForm() {
-
-  const form =
-    $('questionForm');
-
+  const form = $('questionForm');
 
   if (!form) return;
 
+  form.onsubmit = async event => {
+    event.preventDefault();
 
-  form.addEventListener(
-    'submit',
-    async function(event) {
+    try {
+      const data = formObj(form);
 
-      event.preventDefault();
+      if (!data.ExamID)
+        throw new Error('Pilih ujian.');
 
+      if (!data.Pertanyaan)
+        throw new Error('Pertanyaan wajib diisi.');
 
-      const button =
-        form.querySelector(
-          'button[type="submit"]'
+      if (data.QuestionID) {
+        await api(
+          'updateQuestion',
+          TOKEN,
+          data.QuestionID,
+          data
         );
-
-
-      try {
-
-        setButtonLoading(
-          button,
-          true,
-          'Menyimpan...'
-        );
-
-
-        const data =
-          formObj(form);
-
-
-        if (!data.ExamID) {
-
-          throw new Error(
-            'Pilih ujian terlebih dahulu.'
-          );
-        }
-
-
-        if (!data.Pertanyaan) {
-
-          throw new Error(
-            'Pertanyaan wajib diisi.'
-          );
-        }
-
-
-        /*
-         EDIT
-        */
-
-        if (data.QuestionID) {
-
-          await api(
-            'updateQuestion',
-            TOKEN,
-            data.QuestionID,
-            data
-          );
-
-
-        /*
-         ADD
-        */
-
-        } else {
-
-          await api(
-            'addQuestion',
-            TOKEN,
-            data
-          );
-        }
-
-
-        alert(
-          'Soal berhasil disimpan.'
-        );
-
-
-        closeQuestion();
-
-
-        await loadQuestions();
-
-
-        await dashboard();
-
-
-      } catch (error) {
-
-        showError(error);
-
-
-      } finally {
-
-        setButtonLoading(
-          button,
-          false
+      } else {
+        await api(
+          'addQuestion',
+          TOKEN,
+          data
         );
       }
 
+      alert('Soal berhasil disimpan.');
+
+      closeQuestion();
+
+      loadQuestions();
+
+      dashboard();
+
+    } catch (error) {
+      alert(message(error));
     }
-  );
+  };
 }
-
-
-/* =========================================================
-   DELETE QUESTION
-   ========================================================= */
 
 async function removeQuestion(id) {
-
-  const confirmed =
-    confirm(
-      'Apakah Anda yakin ingin menghapus soal ini?'
-    );
-
-
-  if (!confirmed) {
-
-    return;
-  }
-
+  if (!confirm('Hapus soal ini?')) return;
 
   try {
+    await api('deleteQuestion', TOKEN, id);
 
-    await api(
-      'deleteQuestion',
-      TOKEN,
-      id
-    );
+    loadQuestions();
 
-
-    await loadQuestions();
-
-
-    await dashboard();
-
+    dashboard();
 
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
 
-/* =========================================================
-   22. INVITATIONS
-   ========================================================= */
+/* =========================
+   INVITATIONS
+========================= */
 
 async function prepareInvite() {
-
   try {
-
     await loadExams();
 
-
-    const examSelect =
-      $('inviteExam');
-
-
-    if (examSelect) {
-
-      examSelect.innerHTML =
-        options(
-          EXAMS,
-          'Pilih ujian'
-        );
+    if ($('inviteExam')) {
+      $('inviteExam').innerHTML =
+        examOptions('Pilih ujian');
     }
 
-
     STUDENTS =
-      await api(
-        'getStudents',
-        TOKEN
-      );
-
+      await api('getStudents', TOKEN);
 
     if (!Array.isArray(STUDENTS)) {
-
       STUDENTS = [];
     }
 
-
     loadInviteStudents();
 
-
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
-
-/* =========================================================
-   LOAD INVITE STUDENTS
-   ========================================================= */
-
 function loadInviteStudents() {
-
-  const container =
-    $('inviteStudents');
-
+  const container = $('inviteStudents');
 
   if (!container) return;
 
-
   if (!STUDENTS.length) {
-
     container.innerHTML =
       '<div class="item">Belum ada siswa.</div>';
-
     return;
   }
-
 
   container.innerHTML =
-    STUDENTS.map(function(student) {
+    STUDENTS.map(student => `
+      <label class="student-item">
 
-      return `
-        <label class="student-item">
+        <input
+          type="checkbox"
+          value="${esc(student.StudentID)}"
+        >
 
-          <input
-            type="checkbox"
-            value="${esc(student.StudentID)}"
-          >
+        <span>
+          <b>${esc(student.Nama)}</b>
+          <br>
+          ${esc(student.Email)}
+          —
+          ${esc(student.Kelas)}
+        </span>
 
-          <span>
-
-            <b>
-              ${esc(student.Nama)}
-            </b>
-
-            <br>
-
-            ${esc(student.Email)}
-
-            —
-
-            ${esc(student.Kelas)}
-
-          </span>
-
-        </label>
-      `;
-
-    }).join('');
+      </label>
+    `).join('');
 }
 
-
-/* =========================================================
-   SELECT ALL STUDENTS
-   ========================================================= */
-
-function selectAllStudents(checked) {
-
-  const checkboxes =
-    document.querySelectorAll(
-      '#inviteStudents input[type="checkbox"]'
-    );
-
-
-  checkboxes.forEach(function(checkbox) {
-
-    checkbox.checked = checked;
-
-  });
+function selectAllStudents(value) {
+  document
+    .querySelectorAll('#inviteStudents input')
+    .forEach(input => {
+      input.checked = value;
+    });
 }
-
-
-/* =========================================================
-   SEND INVITATIONS
-   ========================================================= */
 
 async function sendInvitations() {
-
-  const examSelect =
-    $('inviteExam');
-
-
   const examId =
-    examSelect
-      ? examSelect.value
-      : '';
-
+    $('inviteExam')?.value || '';
 
   const studentIds =
-    Array.from(
-
-      document.querySelectorAll(
-        '#inviteStudents input:checked'
-      )
-
-    ).map(function(input) {
-
-      return input.value;
-
-    });
-
+    [...document.querySelectorAll(
+      '#inviteStudents input:checked'
+    )].map(input => input.value);
 
   if (!examId) {
-
-    alert(
-      'Pilih ujian terlebih dahulu.'
-    );
-
+    alert('Pilih ujian.');
     return;
   }
-
 
   if (!studentIds.length) {
-
-    alert(
-      'Pilih minimal satu siswa.'
-    );
-
+    alert('Pilih minimal satu siswa.');
     return;
   }
 
-
   try {
-
-    const result =
-      await api(
-        'sendInvitation',
-        TOKEN,
-        examId,
-        studentIds
-      );
-
-
-    alert(
-      'Undangan berhasil dibuat.\n\n' +
-      'Total siswa: ' +
-      (result.total ?? 0) +
-      '\n\nEmail terkirim: ' +
-      (result.emailSent ?? 0)
+    const result = await api(
+      'sendInvitation',
+      TOKEN,
+      examId,
+      studentIds
     );
 
+    alert(
+      `Undangan berhasil dibuat.
+
+Total siswa: ${result.total}
+
+Email terkirim: ${result.emailSent}`
+    );
 
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
 
-/* =========================================================
-   23. RESULTS
-   ========================================================= */
+/* =========================
+   RESULTS
+========================= */
 
 async function prepareResults() {
-
   try {
-
     await loadExams();
 
-
-    const examSelect =
-      $('resultExam');
-
-
-    if (examSelect) {
-
-      examSelect.innerHTML =
-        options(
-          EXAMS,
-          'Semua ujian'
-        );
+    if ($('resultExam')) {
+      $('resultExam').innerHTML =
+        examOptions('Semua ujian');
     }
 
-
-    await loadResults();
-
+    loadResults();
 
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
-
-/* =========================================================
-   LOAD RESULTS
-   ========================================================= */
-
 async function loadResults() {
-
   try {
-
-    const examSelect =
-      $('resultExam');
-
-
     const examId =
-      examSelect
-        ? examSelect.value
-        : '';
-
+      $('resultExam')?.value || '';
 
     const results =
       await api(
@@ -1832,34 +701,22 @@ async function loadResults() {
         examId
       );
 
-
     const container =
       $('resultTable');
 
-
     if (!container) return;
 
-
-    if (
-      !results ||
-      !results.length
-    ) {
-
+    if (!results.length) {
       container.innerHTML =
         '<div class="item">Belum ada hasil ujian.</div>';
-
       return;
     }
 
-
     container.innerHTML = `
-
       <table>
 
         <thead>
-
           <tr>
-
             <th>Nama</th>
             <th>Kelas</th>
             <th>Benar</th>
@@ -1867,176 +724,92 @@ async function loadResults() {
             <th>Nilai</th>
             <th>Status</th>
             <th>Waktu</th>
-
           </tr>
-
         </thead>
-
 
         <tbody>
 
-          ${results.map(function(result) {
+          ${results.map(result => `
+            <tr>
 
-            return `
+              <td>${esc(result.Nama)}</td>
+              <td>${esc(result.Kelas)}</td>
+              <td>${esc(result.Benar)}</td>
+              <td>${esc(result.Salah)}</td>
 
-              <tr>
+              <td>
+                <b>${esc(result.Nilai)}</b>
+              </td>
 
-                <td>
-                  ${esc(result.Nama)}
-                </td>
+              <td>${esc(result.Status)}</td>
+              <td>${esc(result.Waktu)}</td>
 
-
-                <td>
-                  ${esc(result.Kelas)}
-                </td>
-
-
-                <td>
-                  ${esc(result.Benar)}
-                </td>
-
-
-                <td>
-                  ${esc(result.Salah)}
-                </td>
-
-
-                <td>
-
-                  <b>
-                    ${esc(result.Nilai)}
-                  </b>
-
-                </td>
-
-
-                <td>
-                  ${esc(result.Status)}
-                </td>
-
-
-                <td>
-                  ${esc(result.Waktu)}
-                </td>
-
-              </tr>
-
-            `;
-
-          }).join('')}
+            </tr>
+          `).join('')}
 
         </tbody>
 
       </table>
-
     `;
 
-
   } catch (error) {
-
-    showError(error);
+    alert(message(error));
   }
 }
 
 
-/* =========================================================
-   24. RESTORE SESSION
-   ========================================================= */
+/* =========================
+   RESTORE SESSION
+========================= */
 
 async function restoreSession() {
 
-  /*
-   Default:
-   selalu mulai dari halaman login
-  */
-
   showLogin();
 
+  try {
 
-  /*
-   Load session
-  */
+    TOKEN =
+      sessionStorage.getItem('ugas_token') || '';
 
-  loadSession();
+    ADMIN =
+      JSON.parse(
+        sessionStorage.getItem('ugas_admin') || 'null'
+      );
 
+  } catch (error) {
 
-  /*
-   Tidak ada session
-  */
-
-  if (!TOKEN || !ADMIN) {
+    clearSession();
 
     return;
   }
 
+  if (!TOKEN || !ADMIN) return;
 
   try {
-
-    /*
-     Verifikasi session ke server
-    */
 
     await call(
       'getDashboard',
       TOKEN
     );
 
-
-    /*
-     Session valid
-    */
-
     startApp();
-
 
   } catch (error) {
 
-    console.warn(
-      'Session sudah tidak valid:',
-      error
-    );
-
-
-    /*
-     Bersihkan session
-    */
-
     clearSession();
-
-
-    /*
-     Tetap di login
-    */
 
     showLogin();
   }
 }
 
 
-/* =========================================================
-   25. INITIALIZE APPLICATION
-   ========================================================= */
+/* =========================
+   START
+========================= */
 
 document.addEventListener(
   'DOMContentLoaded',
-  async function() {
-
-    console.log(
-      '================================'
-    );
-
-    console.log(
-      'UJIAN GAS ADMIN STARTED'
-    );
-
-    console.log(
-      '================================'
-    );
-
-
-    /*
-     Setup semua form
-    */
+  async () => {
 
     setupLogin();
 
@@ -2046,14 +819,9 @@ document.addEventListener(
 
     setupQuestionForm();
 
-
-    /*
-     Restore session
-    */
-
     await restoreSession();
 
   }
 );
 
-</script>
+               </script>
