@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
     private fun showExams() {
         lifecycleScope.launch {
             try {
-                val r = GasApi.post("exams")
+                val r = GasApi.post("exams", mapOf("email" to currentEmail))
                 val arr = r.optJSONArray("data") ?: JSONArray()
                 val (scroll, box) = screen()
                 box.addView(sectionTitle("Daftar Ujian", "Pilih ujian yang ingin dikerjakan"))
