@@ -8,30 +8,63 @@ import okhttp3.Request
 import org.json.JSONObject
 
 /**
- * Ganti GAS_WEB_APP_URL dengan URL Deploy as Web App dari Google Apps Script.
+ * API untuk menghubungkan aplikasi Android
+ * dengan Google Apps Script Web App.
  */
 object GasApi {
-    private const val GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbw9fQgDgydNbeF-tHyLeCSDV0rZK78hzWcupP_u8-J3IKsy7aIR8lyZ9dqtMZFUEiI/exec"    private val client = OkHttpClient()
 
-    suspend fun post(action: String, params: Map<String, String> = emptyMap()): JSONObject =
-        withContext(Dispatchers.IO) {
-            require(GAS_WEB_APP_URL.startsWith("https://")) {
-                "GAS_WEB_APP_URL belum diisi."
+    private const val GAS_WEB_APP_URL =
+        "https://script.google.com/macros/s/AKfycbw9fQgDgydNbeF-tHyLeCSDV0rZK78hzWcupP_u8-J3IKsy7aIR8lyZ9dqtMZFUEiI/exec"
+
+    private val client = OkHttpClient()
+
+    /**
+     * Mengirim request POST ke Google Apps Script.
+     *
+     * @param action nama action yang diproses oleh GAS
+     * @param params parameter tambahan
+     * @return response JSON dari GAS
+     */
+    suspend fun post(
+        action: String,
+        params: Map<String, String> = emptyMap()
+    ): JSONObject = withContext(Dispatchers.IO) {
+
+        require(GAS_WEB_APP_URL.startsWith("https://")) {
+            "GAS_WEB_APP_URL belum diisi."
+        }
+
+        val body = FormBody.Builder()
+            .add("action", action)
+            .apply {
+                params.forEach { (key, value) ->
+                    add(key, value)
+                }
             }
-            val body = FormBody.Builder().apply {
-                add("action", action)
-                params.forEach { (k, v) -> add(k, v) }
-            }.build()
+            .build()
 
-            val request = Request.Builder()
-                .url(GAS_WEB_APP_URL)
-                .post(body)
-                .build()
+        val request = Request.Builder()
+            .url(GAS_WEB_APP_URL)
+            .post(body)
+            .build()
 
-            client.newCall(request).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                if (!response.isSuccessful) error("HTTP ${response.code}: $raw")
+        client.newCall(request).execute().use { response ->
+
+            val raw = response.body?.string().orEmpty()
+
+            if (!response.isSuccessful) {
+                error("HTTP ${response.code}: $raw")
+            }
+
+            if (raw.isBlank()) {
+                error("Response dari Google Apps Script kosong.")
+            }
+
+            try {
                 JSONObject(raw)
+            } catch (e: Exception) {
+                error("Response GAS bukan JSON yang valid: $raw")
             }
         }
+    }
 }
