@@ -1,1 +1,9 @@
-
+<resources>
+    <color name="navy">#101827</color>
+    <color name="navy2">#172235</color>
+    <color name="orange">#FF7043</color>
+    <color name="bg">#F5F7FA</color>
+    <color name="text">#17202A</color>
+    <color name="muted">#6B7280</color>
+    <color name="white">#FFFFFF</color>
+</resources>
