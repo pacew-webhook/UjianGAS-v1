@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity() {
     private val blue = Color.parseColor("#2563EB")
     private val blueSoft = Color.parseColor("#EFF6FF")
     private val bg = Color.parseColor("#F6F8FC")
-    private val text = Color.parseColor("#172033")
+    private val appTextColor = Color.parseColor("#172033")
     private val muted = Color.parseColor("#64748B")
     private val border = Color.parseColor("#E2E8F0")
     private val white = Color.WHITE
@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
             text = value
             textSize = 28f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(text)
+            setTextColor(appTextColor)
         })
         if (subtitle != null) addView(TextView(this@MainActivity).apply {
             text = subtitle
@@ -111,7 +111,7 @@ class MainActivity : AppCompatActivity() {
         this.hint = hint
         inputType = type
         textSize = 16f
-        setTextColor(text)
+        setTextColor(appTextColor)
         setHintTextColor(Color.parseColor("#94A3B8"))
         setPadding(dp(16), dp(2), dp(16), dp(2))
         minHeight = dp(58)
@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity() {
                     text = title
                     textSize = 16f
                     typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(text)
+                    setTextColor(appTextColor)
                 })
                 addView(TextView(this@MainActivity).apply {
                     text = subtitle
@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity() {
                 text = "Selamat datang 👋"
                 textSize = 20f
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(text)
+                setTextColor(appTextColor)
             })
             addView(TextView(this@MainActivity).apply {
                 text = "Gunakan akun yang sudah terdaftar."
@@ -213,22 +213,27 @@ class MainActivity : AppCompatActivity() {
             addView(password, lp(bottom = 16))
             addView(primaryButton("Masuk") {
                 if (email.text.isBlank() || password.text.isBlank()) {
-                    toast("Email dan password wajib diisi"); return@primaryButton
+                    toast("Email dan password wajib diisi")
+                } else {
+                    lifecycleScope.launch {
+                        try {
+                            val r = GasApi.post("login", mapOf(
+                                "email" to email.text.toString().trim(),
+                                "password" to password.text.toString()
+                            ))
+                            if (r.optBoolean("ok")) {
+                                currentEmail = email.text.toString().trim()
+                                currentName = r.optString("name", currentEmail)
+                                showHome()
+                            } else {
+                                toast(r.optString("message", "Login gagal"))
+                            }
+                        } catch (e: Exception) {
+                            toast(e.message ?: "Gagal terhubung")
+                        }
+                    }
                 }
-                lifecycleScope.launch {
-                    try {
-                        val r = GasApi.post("login", mapOf(
-                            "email" to email.text.toString().trim(),
-                            "password" to password.text.toString()
-                        ))
-                        if (r.optBoolean("ok")) {
-                            currentEmail = email.text.toString().trim()
-                            currentName = r.optString("name", currentEmail)
-                            showHome()
-                        } else toast(r.optString("message", "Login gagal"))
-                    } catch (e: Exception) { toast(e.message ?: "Gagal terhubung") }
-                }
-            }))
+            })
             addView(secondaryButton("Buat akun baru") { showRegister() }, lp(top = 10))
         }, lp(top = 28))
 
@@ -344,7 +349,7 @@ class MainActivity : AppCompatActivity() {
                         text = q.optString("question")
                         textSize = 17f
                         typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(text)
+                        setTextColor(appTextColor)
                     }, lp(top = 7, bottom = 10))
 
                     val group = RadioGroup(this@MainActivity)
@@ -353,7 +358,7 @@ class MainActivity : AppCompatActivity() {
                             text = "$letter. ${q.optString("option$letter")}" 
                             tag = letter
                             textSize = 15f
-                            setTextColor(text)
+                            setTextColor(appTextColor)
                             setPadding(dp(4), dp(6), 0, dp(6))
                         }
                         group.addView(rb)
@@ -391,7 +396,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(24), dp(30), dp(24), dp(30))
             addView(TextView(this@MainActivity).apply { text = icon; textSize = 42f; gravity = Gravity.CENTER })
             addView(TextView(this@MainActivity).apply {
-                text = title; textSize = 18f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setTextColor(text)
+                text = title; textSize = 18f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setTextColor(appTextColor)
             }, lp(top = 8))
             addView(TextView(this@MainActivity).apply {
                 text = subtitle; textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted)
@@ -419,7 +424,7 @@ class MainActivity : AppCompatActivity() {
                         addView(TextView(this@MainActivity).apply {
                             text = o.optString("text", o.toString())
                             textSize = 16f
-                            setTextColor(text)
+                            setTextColor(appTextColor)
                         })
                     }, lp(top = 14))
                 }
