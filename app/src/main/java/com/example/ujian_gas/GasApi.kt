@@ -11,7 +11,7 @@ import org.json.JSONObject
  * Ganti GAS_WEB_APP_URL dengan URL Deploy as Web App dari Google Apps Script.
  */
 object GasApi {
-    private const val GAS_WEB_APP_URL = "PASTE_GAS_WEB_APP_URL_HERE"
+    private const val GAS_WEB_APP_URL = "AKfycbw9fQgDgydNbeF-tHyLeCSDV0rZK78hzWcupP_u8-J3IKsy7aIR8lyZ9dqtMZFUEiI"
     private val client = OkHttpClient()
 
     suspend fun post(action: String, params: Map<String, String> = emptyMap()): JSONObject =
