@@ -1,311 +1,107 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
   <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <?!= include('Style'); ?>
 </head>
-
 <body>
 
-<div id="loginView" class="login">
+<div id="loginView" class="login-screen">
   <div class="login-card">
-
     <div class="logo">🎓</div>
-    <h1>Ujian GAS</h1>
-    <p>Portal Admin Guru</p>
-
-    <form id="loginForm">
-      <input type="email" name="email"
-             placeholder="Email Guru" required>
-
-      <input type="password" name="password"
-             placeholder="Password" required>
-
-      <button type="submit">Masuk</button>
+    <div class="eyebrow">UJIAN GAS</div>
+    <h1>Admin Guru</h1>
+    <p class="muted">Kelola siswa, ujian, soal, undangan, dan hasil.</p>
+    <form id="loginForm" autocomplete="on">
+      <label>Email Guru<input type="email" name="email" placeholder="guru@sekolah.sch.id" required autocomplete="username"></label>
+      <label>Password<input type="password" name="password" placeholder="Masukkan password" required autocomplete="current-password"></label>
+      <button class="primary big" type="submit">Masuk ke Dashboard</button>
     </form>
-
-    <p id="loginMsg"></p>
-
+    <div id="loginMsg" class="form-msg"></div>
   </div>
 </div>
 
-
 <div id="appView" hidden>
-
-  <header>
-    <b>🎓 Ujian GAS</b>
-
-    <div>
-      <span id="adminName"></span>
-      <button onclick="logout()">Keluar</button>
-    </div>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon">🎓</span><div><strong>Ujian GAS</strong><small>Admin Guru</small></div></div>
+    <div class="top-actions"><span id="adminRole" class="badge"></span><span id="adminName" class="admin-name"></span><button class="ghost" onclick="logout()">Keluar</button></div>
   </header>
 
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar">
+      <button data-page="dashboard" onclick="page('dashboard')">📊 <span>Dashboard</span></button>
+      <button data-page="students" onclick="page('students')">👨‍🎓 <span>Siswa</span></button>
+      <button data-page="exams" onclick="page('exams')">📝 <span>Ujian</span></button>
+      <button data-page="questions" onclick="page('questions')">❓ <span>Bank Soal</span></button>
+      <button data-page="invite" onclick="page('invite')">✉️ <span>Undangan</span></button>
+      <button data-page="results" onclick="page('results')">🏆 <span>Hasil</span></button>
+      <button data-page="reminders" onclick="page('reminders')">🔔 <span>Pengingat</span></button>
+      <button data-page="admins" onclick="page('admins')">⚙️ <span>Admin</span></button>
+    </aside>
 
-  <main>
+    <main>
+      <section id="dashboard" class="page active">
+        <div class="page-head"><div><div class="eyebrow">OVERVIEW</div><h1>Dashboard</h1><p class="muted">Ringkasan aktivitas sistem ujian.</p></div><button class="ghost" onclick="dashboard()">↻ Refresh</button></div>
+        <div class="cards">
+          <div class="stat-card"><div class="stat-icon">👨‍🎓</div><div><span>Siswa</span><b id="studentsCount">0</b><small id="activeStudents">0 aktif</small></div></div>
+          <div class="stat-card"><div class="stat-icon">📝</div><div><span>Ujian</span><b id="examsCount">0</b><small id="publishedExams">0 published</small></div></div>
+          <div class="stat-card"><div class="stat-icon">❓</div><div><span>Soal</span><b id="questionsCount">0</b><small>bank soal</small></div></div>
+          <div class="stat-card"><div class="stat-icon">🏆</div><div><span>Hasil</span><b id="resultsCount">0</b><small>hasil tersimpan</small></div></div>
+        </div>
+        <div class="dashboard-grid">
+          <div class="panel"><div class="panel-head"><h3>Akses cepat</h3></div><div class="quick-grid"><button onclick="openStudentModal()">➕ Tambah Siswa</button><button onclick="openExamModal()">➕ Buat Ujian</button><button onclick="page('questions')">❓ Kelola Soal</button><button onclick="page('invite')">✉️ Kirim Undangan</button></div></div>
+          <div class="panel"><div class="panel-head"><h3>Status sistem</h3></div><div class="status-list"><div><span>Spreadsheet</span><strong>Terhubung</strong></div><div><span>Session admin</span><strong>6 jam</strong></div><div><span>Keamanan password</span><strong>SHA-256</strong></div></div></div>
+        </div>
+      </section>
 
-    <h1>Dashboard</h1>
+      <section id="students" class="page">
+        <div class="page-head"><div><div class="eyebrow">DATA</div><h1>Siswa</h1><p class="muted">Kelola peserta ujian.</p></div><button class="primary" onclick="openStudentModal()">＋ Tambah Siswa</button></div>
+        <div class="toolbar"><input id="studentSearch" class="search" placeholder="Cari nama, email, atau kelas…" oninput="renderStudents()"><select id="studentStatusFilter" onchange="renderStudents()"><option value="">Semua status</option><option>ACTIVE</option><option>INACTIVE</option></select></div>
+        <div id="studentsTable" class="table-wrap"></div>
+      </section>
 
-    <div class="cards">
+      <section id="exams" class="page">
+        <div class="page-head"><div><div class="eyebrow">UJIAN</div><h1>Daftar Ujian</h1><p class="muted">Buat dan atur jadwal ujian.</p></div><button class="primary" onclick="openExamModal()">＋ Buat Ujian</button></div>
+        <div class="toolbar"><input id="examSearch" class="search" placeholder="Cari ujian atau mapel…" oninput="renderExams()"><select id="examStatusFilter" onchange="renderExams()"><option value="">Semua status</option><option>DRAFT</option><option>PUBLISHED</option><option>CLOSED</option></select></div>
+        <div id="examsList"></div>
+      </section>
 
-      <div class="card">
-        <b id="studentsCount">0</b>
-        <span>Siswa</span>
-      </div>
+      <section id="questions" class="page">
+        <div class="page-head"><div><div class="eyebrow">BANK SOAL</div><h1>Soal Pilihan Ganda</h1><p class="muted">Tambah, edit, dan hapus soal per ujian.</p></div><button class="primary" onclick="openQuestionModal()">＋ Tambah Soal</button></div>
+        <div class="toolbar"><select id="questionExamFilter" onchange="loadQuestions()"></select><input id="questionSearch" class="search" placeholder="Cari pertanyaan…" oninput="renderQuestions()"></div>
+        <div id="questionList"></div>
+      </section>
 
-      <div class="card">
-        <b id="examsCount">0</b>
-        <span>Ujian</span>
-      </div>
+      <section id="invite" class="page">
+        <div class="page-head"><div><div class="eyebrow">PESERTA</div><h1>Undangan Ujian</h1><p class="muted">Pilih ujian lalu kirim undangan ke siswa.</p></div></div>
+        <div class="invite-layout"><div class="panel"><div class="field"><label>Ujian<select id="inviteExam"></select></label></div><div class="select-row"><button class="ghost" onclick="selectAllStudents(true)">Pilih Semua</button><button class="ghost" onclick="selectAllStudents(false)">Batal Pilih</button></div><div id="inviteStudents"></div><button class="primary full" onclick="sendInvitations()">✉️ Kirim Undangan</button></div><div class="panel"><div class="panel-head"><h3>Riwayat Undangan</h3><button class="ghost" onclick="loadInvitations()">↻</button></div><div id="invitationList"></div></div></div>
+      </section>
 
-      <div class="card">
-        <b id="questionsCount">0</b>
-        <span>Soal</span>
-      </div>
+      <section id="results" class="page">
+        <div class="page-head"><div><div class="eyebrow">NILAI</div><h1>Hasil Ujian</h1><p class="muted">Lihat nilai dan status peserta.</p></div><button class="ghost" onclick="loadResults()">↻ Refresh</button></div>
+        <div class="toolbar"><select id="resultExam" onchange="loadResults()"></select><input id="resultSearch" class="search" placeholder="Cari siswa…" oninput="renderResults()"></div>
+        <div id="resultTable" class="table-wrap"></div>
+      </section>
 
-      <div class="card">
-        <b id="resultsCount">0</b>
-        <span>Hasil</span>
-      </div>
+      <section id="reminders" class="page">
+        <div class="page-head"><div><div class="eyebrow">NOTIFIKASI</div><h1>Pengingat</h1><p class="muted">Simpan catatan/pengingat terkait ujian.</p></div><button class="primary" onclick="openReminderModal()">＋ Tambah Pengingat</button></div>
+        <div class="toolbar"><select id="reminderExamFilter" onchange="loadReminders()"></select></div>
+        <div id="reminderList"></div>
+      </section>
 
-    </div>
-
-  </main>
-
+      <section id="admins" class="page">
+        <div class="page-head"><div><div class="eyebrow">PENGATURAN</div><h1>Admin</h1><p class="muted">Kelola akun guru/admin.</p></div><button class="primary" onclick="openAdminModal()">＋ Tambah Admin</button></div>
+        <div id="adminTable" class="table-wrap"></div>
+      </section>
+    </main>
+  </div>
 </div>
 
-
-<script>
-
-let TOKEN = '';
-let ADMIN = null;
-
-const $ = id => document.getElementById(id);
-
-
-/* PANGGIL APPS SCRIPT */
-
-function call(fn, ...args) {
-
-  return new Promise((resolve, reject) => {
-
-    google.script.run
-      .withSuccessHandler(resolve)
-      .withFailureHandler(error => {
-
-        reject(
-          new Error(
-            error.message || String(error)
-          )
-        );
-
-      })[fn](...args);
-
-  });
-
-}
-
-
-/* LOGIN */
-
-$('loginForm').onsubmit = async e => {
-
-  e.preventDefault();
-
-  const form = e.target;
-
-  const email =
-    form.email.value.trim();
-
-  const password =
-    form.password.value;
-
-  const msg =
-    $('loginMsg');
-
-  try {
-
-    msg.textContent =
-      'Memproses...';
-
-    const result =
-      await call(
-        'loginAdmin',
-        email,
-        password
-      );
-
-
-    if (
-      !result ||
-      !result.token ||
-      !result.admin
-    ) {
-      throw new Error(
-        'Email atau password salah'
-      );
-    }
-
-
-    TOKEN =
-      result.token;
-
-    ADMIN =
-      result.admin;
-
-
-    sessionStorage.setItem(
-      'ugas_token',
-      TOKEN
-    );
-
-    sessionStorage.setItem(
-      'ugas_admin',
-      JSON.stringify(ADMIN)
-    );
-
-
-    startApp();
-
-
-  } catch (error) {
-
-    TOKEN = '';
-    ADMIN = null;
-
-    sessionStorage.clear();
-
-    msg.textContent =
-      error.message ||
-      'Login gagal';
-
-  }
-
-};
-
-
-/* MASUK APP */
-
-function startApp() {
-
-  $('loginView').hidden = true;
-
-  $('appView').hidden = false;
-
-  $('adminName').textContent =
-    ADMIN.Nama || 'Guru';
-
-  dashboard();
-
-}
-
-
-/* DASHBOARD */
-
-async function dashboard() {
-
-  try {
-
-    const data =
-      await call(
-        'getDashboard',
-        TOKEN
-      );
-
-
-    $('studentsCount').textContent =
-      data.students || 0;
-
-    $('examsCount').textContent =
-      data.exams || 0;
-
-    $('questionsCount').textContent =
-      data.questions || 0;
-
-    $('resultsCount').textContent =
-      data.results || 0;
-
-
-  } catch (error) {
-
-    console.log(error);
-
-  }
-
-}
-
-
-/* LOGOUT */
-
-async function logout() {
-
-  try {
-
-    if (TOKEN) {
-
-      await call(
-        'logoutAdmin',
-        TOKEN
-      );
-
-    }
-
-  } catch (error) {}
-
-
-  TOKEN = '';
-  ADMIN = null;
-
-  sessionStorage.clear();
-
-  $('appView').hidden = true;
-
-  $('loginView').hidden = false;
-
-}
-
-
-/* RESTORE LOGIN */
-
-(async function() {
-
-  try {
-
-    TOKEN =
-      sessionStorage.getItem(
-        'ugas_token'
-      ) || '';
-
-    const admin =
-      sessionStorage.getItem(
-        'ugas_admin'
-      );
-
-    if (!TOKEN || !admin) return;
-
-    ADMIN =
-      JSON.parse(admin);
-
-    await call(
-      'getDashboard',
-      TOKEN
-    );
-
-    startApp();
-
-
-  } catch (error) {
-
-    TOKEN = '';
-    ADMIN = null;
-
-    sessionStorage.clear();
-
-  }
-
-})();
-
-</script>
-
+<div id="modal" class="modal" hidden><div class="modal-card"><button class="modal-close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
+<div id="toast" class="toast" hidden></div>
+<div id="loading" class="loading" hidden><div class="spinner"></div><span>Memproses…</span></div>
+
+<?!= include('JavaScript'); ?>
 </body>
 </html>
