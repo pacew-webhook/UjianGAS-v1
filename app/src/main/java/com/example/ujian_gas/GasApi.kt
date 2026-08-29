@@ -14,7 +14,7 @@ import org.json.JSONObject
 object GasApi {
 
     private const val GAS_WEB_APP_URL =
-        "PASTE_URL_WEB_APP_ADMIN_GURU_DI_SINI"
+        "https://script.google.com/macros/s/AKfycbwZSv8kIzzKo9q0krkNruTkeF4r3mPd0bWek2CVd5kCPM1LU5JgfVhYmsCYh7rNfuyK/exec"
 
     private val client = OkHttpClient()
 
