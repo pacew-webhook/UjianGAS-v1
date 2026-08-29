@@ -34,7 +34,7 @@ function setupDatabase(){
 
 // Run once from GAS editor after setup. Change these credentials first.
 function createInitialAdmin(){
-  return createAdmin_('Administrator','admin@example.com','GANTI_PASSWORD_ADMIN','ADMIN');
+  return createAdmin_('Administrator','admin@example.com','admin123','ADMIN');
 }
 function hash_(value){
   const raw=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(value));
