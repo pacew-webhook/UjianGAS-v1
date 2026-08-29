@@ -2,455 +2,310 @@
 <html>
 <head>
   <base target="_top">
-  <?!= include_('Style'); ?>
+  <?!= include('Style'); ?>
 </head>
 
 <body>
 
-  <!-- ================= LOGIN ================= -->
+<div id="loginView" class="login">
+  <div class="login-card">
 
-  <div id="loginView" class="center">
+    <div class="logo">🎓</div>
+    <h1>Ujian GAS</h1>
+    <p>Portal Admin Guru</p>
 
-    <div class="login-card">
+    <form id="loginForm">
+      <input type="email" name="email"
+             placeholder="Email Guru" required>
 
-      <div class="logo">🎓</div>
+      <input type="password" name="password"
+             placeholder="Password" required>
 
-      <h1>Ujian GAS</h1>
+      <button type="submit">Masuk</button>
+    </form>
 
-      <p>Portal Admin Guru</p>
+    <p id="loginMsg"></p>
 
-      <form id="loginForm">
+  </div>
+</div>
 
-        <input
-          name="email"
-          type="email"
-          placeholder="Email Guru"
-          required
-        >
 
-        <input
-          name="password"
-          type="password"
-          placeholder="Password"
-          required
-        >
+<div id="appView" hidden>
 
-        <button type="submit">
-          🔐 Masuk
-        </button>
+  <header>
+    <b>🎓 Ujian GAS</b>
 
-      </form>
+    <div>
+      <span id="adminName"></span>
+      <button onclick="logout()">Keluar</button>
+    </div>
+  </header>
 
-      <small id="loginMsg"></small>
+
+  <main>
+
+    <h1>Dashboard</h1>
+
+    <div class="cards">
+
+      <div class="card">
+        <b id="studentsCount">0</b>
+        <span>Siswa</span>
+      </div>
+
+      <div class="card">
+        <b id="examsCount">0</b>
+        <span>Ujian</span>
+      </div>
+
+      <div class="card">
+        <b id="questionsCount">0</b>
+        <span>Soal</span>
+      </div>
+
+      <div class="card">
+        <b id="resultsCount">0</b>
+        <span>Hasil</span>
+      </div>
 
     </div>
 
-  </div>
+  </main>
 
+</div>
 
-  <!-- ================= APLIKASI ================= -->
 
-  <div id="appView" hidden>
+<script>
 
-    <header>
+let TOKEN = '';
+let ADMIN = null;
 
-      <div class="brand">
-        🎓 Ujian GAS
-        <span>Admin Guru</span>
-      </div>
+const $ = id => document.getElementById(id);
 
-      <div>
-        <span id="adminName"></span>
 
-        <button
-          type="button"
-          class="ghost"
-          onclick="logout()"
-        >
-          Keluar
-        </button>
-      </div>
+/* PANGGIL APPS SCRIPT */
 
-    </header>
+function call(fn, ...args) {
 
+  return new Promise((resolve, reject) => {
 
-    <div class="layout">
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(error => {
 
-      <!-- MENU -->
+        reject(
+          new Error(
+            error.message || String(error)
+          )
+        );
 
-      <aside>
+      })[fn](...args);
 
-        <button type="button" onclick="page('dashboard')">
-          🏠 Dashboard
-        </button>
+  });
 
-        <button type="button" onclick="page('students')">
-          👨‍🎓 Siswa
-        </button>
+}
 
-        <button type="button" onclick="page('exams')">
-          📝 Ujian
-        </button>
 
-        <button type="button" onclick="page('questions')">
-          ❓ Kelola Soal
-        </button>
+/* LOGIN */
 
-        <button type="button" onclick="page('invite')">
-          📩 Undangan
-        </button>
+$('loginForm').onsubmit = async e => {
 
-        <button type="button" onclick="page('results')">
-          📊 Nilai
-        </button>
+  e.preventDefault();
 
-      </aside>
+  const form = e.target;
 
+  const email =
+    form.email.value.trim();
 
-      <!-- CONTENT -->
+  const password =
+    form.password.value;
 
-      <main>
+  const msg =
+    $('loginMsg');
 
+  try {
 
-        <!-- DASHBOARD -->
+    msg.textContent =
+      'Memproses...';
 
-        <section id="dashboard" class="page active">
+    const result =
+      await call(
+        'loginAdmin',
+        email,
+        password
+      );
 
-          <h1>Dashboard</h1>
 
-          <div class="cards">
+    if (
+      !result ||
+      !result.token ||
+      !result.admin
+    ) {
+      throw new Error(
+        'Email atau password salah'
+      );
+    }
 
-            <div class="card">
-              <b id="studentsCount">0</b>
-              <span>Siswa</span>
-            </div>
 
-            <div class="card">
-              <b id="examsCount">0</b>
-              <span>Ujian</span>
-            </div>
+    TOKEN =
+      result.token;
 
-            <div class="card">
-              <b id="questionsCount">0</b>
-              <span>Soal</span>
-            </div>
+    ADMIN =
+      result.admin;
 
-            <div class="card">
-              <b id="resultsCount">0</b>
-              <span>Hasil</span>
-            </div>
 
-          </div>
+    sessionStorage.setItem(
+      'ugas_token',
+      TOKEN
+    );
 
-        </section>
+    sessionStorage.setItem(
+      'ugas_admin',
+      JSON.stringify(ADMIN)
+    );
 
 
-        <!-- SISWA -->
-
-        <section id="students" class="page">
+    startApp();
 
-          <h1>👨‍🎓 Tambah Siswa</h1>
 
-          <form id="studentForm">
+  } catch (error) {
 
-            <input
-              name="Nama"
-              placeholder="Nama siswa"
-              required
-            >
+    TOKEN = '';
+    ADMIN = null;
 
-            <input
-              name="Email"
-              type="email"
-              placeholder="Email"
-              required
-            >
+    sessionStorage.clear();
 
-            <input
-              name="PasswordHash"
-              type="password"
-              placeholder="Password awal siswa"
-              required
-            >
+    msg.textContent =
+      error.message ||
+      'Login gagal';
 
-            <input
-              name="Kelas"
-              placeholder="Kelas"
-              required
-            >
+  }
 
-            <button type="submit">
-              Simpan Siswa
-            </button>
+};
 
-          </form>
 
-        </section>
+/* MASUK APP */
 
+function startApp() {
 
-        <!-- UJIAN -->
+  $('loginView').hidden = true;
 
-        <section id="exams" class="page">
+  $('appView').hidden = false;
 
-          <h1>📝 Buat Ujian</h1>
+  $('adminName').textContent =
+    ADMIN.Nama || 'Guru';
 
-          <form id="examForm">
+  dashboard();
 
-            <input
-              name="NamaUjian"
-              placeholder="Nama ujian"
-              required
-            >
+}
 
-            <input
-              name="Mapel"
-              placeholder="Mata pelajaran"
-              required
-            >
 
-            <input
-              name="DurasiMenit"
-              type="number"
-              placeholder="Durasi menit"
-              required
-            >
+/* DASHBOARD */
 
-            <input
-              name="Tanggal"
-              type="date"
-              required
-            >
+async function dashboard() {
 
-            <input
-              name="JamMulai"
-              type="time"
-              required
-            >
+  try {
 
-            <input
-              name="JamSelesai"
-              type="time"
-              required
-            >
+    const data =
+      await call(
+        'getDashboard',
+        TOKEN
+      );
 
-            <select name="Status">
-              <option value="DRAFT">DRAFT</option>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="CLOSED">CLOSED</option>
-            </select>
 
-            <button type="submit">
-              Simpan Ujian
-            </button>
+    $('studentsCount').textContent =
+      data.students || 0;
 
-          </form>
+    $('examsCount').textContent =
+      data.exams || 0;
 
-        </section>
+    $('questionsCount').textContent =
+      data.questions || 0;
 
+    $('resultsCount').textContent =
+      data.results || 0;
 
-        <!-- SOAL -->
 
-        <section id="questions" class="page">
+  } catch (error) {
 
-          <div class="title-row">
+    console.log(error);
 
-            <h1>❓ Kelola Soal</h1>
+  }
 
-            <button
-              type="button"
-              onclick="newQuestion()"
-            >
-              ➕ Tambah Soal
-            </button>
+}
 
-          </div>
 
+/* LOGOUT */
 
-          <select
-            id="questionExamFilter"
-            onchange="loadQuestions()"
-          ></select>
+async function logout() {
 
+  try {
 
-          <div id="questionList"></div>
+    if (TOKEN) {
 
+      await call(
+        'logoutAdmin',
+        TOKEN
+      );
 
-          <!-- EDITOR SOAL -->
+    }
 
-          <div
-            id="questionEditor"
-            class="modal"
-            hidden
-          >
+  } catch (error) {}
 
-            <div class="modal-box">
 
-              <button
-                type="button"
-                class="close"
-                onclick="closeQuestion()"
-              >
-                ×
-              </button>
+  TOKEN = '';
+  ADMIN = null;
 
+  sessionStorage.clear();
 
-              <h2 id="questionTitle">
-                Tambah Soal
-              </h2>
+  $('appView').hidden = true;
 
+  $('loginView').hidden = false;
 
-              <form id="questionForm">
+}
 
-                <input
-                  type="hidden"
-                  name="QuestionID"
-                >
 
+/* RESTORE LOGIN */
 
-                <select
-                  name="ExamID"
-                  id="questionExam"
-                  required
-                ></select>
+(async function() {
 
+  try {
 
-                <textarea
-                  name="Pertanyaan"
-                  placeholder="Pertanyaan"
-                  required
-                ></textarea>
+    TOKEN =
+      sessionStorage.getItem(
+        'ugas_token'
+      ) || '';
 
+    const admin =
+      sessionStorage.getItem(
+        'ugas_admin'
+      );
 
-                <input
-                  name="PilihanA"
-                  placeholder="Pilihan A"
-                  required
-                >
+    if (!TOKEN || !admin) return;
 
-                <input
-                  name="PilihanB"
-                  placeholder="Pilihan B"
-                  required
-                >
+    ADMIN =
+      JSON.parse(admin);
 
-                <input
-                  name="PilihanC"
-                  placeholder="Pilihan C"
-                  required
-                >
+    await call(
+      'getDashboard',
+      TOKEN
+    );
 
-                <input
-                  name="PilihanD"
-                  placeholder="Pilihan D"
-                  required
-                >
+    startApp();
 
 
-                <select name="JawabanBenar">
+  } catch (error) {
 
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                  <option value="D">D</option>
+    TOKEN = '';
+    ADMIN = null;
 
-                </select>
+    sessionStorage.clear();
 
+  }
 
-                <input
-                  name="Bobot"
-                  type="number"
-                  value="1"
-                  min="1"
-                >
+})();
 
-
-                <button type="submit">
-                  Simpan Soal
-                </button>
-
-              </form>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        <!-- UNDANGAN -->
-
-        <section id="invite" class="page">
-
-          <h1>📩 Kirim Undangan</h1>
-
-
-          <select
-            id="inviteExam"
-          ></select>
-
-
-          <div class="toolbar">
-
-            <button
-              type="button"
-              onclick="selectAllStudents(true)"
-            >
-              Pilih Semua
-            </button>
-
-
-            <button
-              type="button"
-              class="ghost"
-              onclick="selectAllStudents(false)"
-            >
-              Batal
-            </button>
-
-          </div>
-
-
-          <div id="inviteStudents"></div>
-
-
-          <button
-            type="button"
-            onclick="sendInvitations()"
-          >
-            📧 Kirim Undangan
-          </button>
-
-        </section>
-
-
-        <!-- NILAI -->
-
-        <section id="results" class="page">
-
-          <h1>📊 Nilai Siswa</h1>
-
-
-          <select
-            id="resultExam"
-            onchange="loadResults()"
-          ></select>
-
-
-          <div id="resultTable"></div>
-
-        </section>
-
-
-      </main>
-
-    </div>
-
-  </div>
-
-
-  <!-- JAVASCRIPT HARUS PALING BAWAH -->
-
-  <?!= include_('JavaScript'); ?>
+</script>
 
 </body>
 </html>
