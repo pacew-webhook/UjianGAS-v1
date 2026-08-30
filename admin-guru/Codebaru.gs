@@ -673,7 +673,7 @@ function getStudents(token) {
 
   requireAdmin_(token);
 
-  return rows_('Siswa').map(function(s) {
+  return clientSafe_(rows_('Siswa').map(function(s) {
 
     return {
 
@@ -689,7 +689,7 @@ function getStudents(token) {
 
       CreatedAt: s.CreatedAt
     };
-  });
+  }));
 }
 
 function addStudent(token, data) {
@@ -725,7 +725,7 @@ function addStudent(token, data) {
     );
   }
 
-  return append_('Siswa', {
+  return clientSafe_(append_('Siswa', {
 
     StudentID: id_('STD'),
 
@@ -748,7 +748,7 @@ function addStudent(token, data) {
         .toUpperCase(),
 
     CreatedAt: now_()
-  });
+  }));
 }
 
 function updateStudent(
@@ -812,6 +812,39 @@ function deleteStudent(
   );
 }
 
+
+/* =========================
+   CLIENT SERIALIZATION
+   =========================
+   google.script.run tidak dapat mengirim objek Date langsung ke browser.
+   Semua nilai yang dikirim ke Admin Guru harus berupa tipe JSON sederhana.
+*/
+function clientSafe_(value) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(function(item) {
+      return clientSafe_(item);
+    });
+  }
+
+  if (value && typeof value === 'object') {
+    const out = {};
+    Object.keys(value).forEach(function(key) {
+      out[key] = clientSafe_(value[key]);
+    });
+    return out;
+  }
+
+  return value;
+}
+
+function clientRows_(sheetName) {
+  return clientSafe_(rows_(sheetName));
+}
+
 /* =========================
    ADMIN - UJIAN
    ========================= */
@@ -820,7 +853,7 @@ function getExams(token) {
 
   requireAdmin_(token);
 
-  return rows_('Ujian');
+  return clientRows_('Ujian');
 }
 
 function createExam(
@@ -863,7 +896,7 @@ function createExam(
     );
   }
 
-  return append_('Ujian', {
+  return clientSafe_(append_('Ujian', {
 
     ExamID: id_('EXM'),
 
@@ -896,7 +929,7 @@ function createExam(
 
     CreatedBy:
       admin.Email
-  });
+  }));
 }
 
 function updateExam(
@@ -986,7 +1019,7 @@ function getQuestions(
 
   requireAdmin_(token);
 
-  return rows_('Soal')
+  return clientRows_('Soal')
     .filter(function(q) {
 
       return !examId ||
@@ -1040,7 +1073,7 @@ function addQuestion(
     );
   }
 
-  return append_('Soal', {
+  return clientSafe_(append_('Soal', {
 
     QuestionID: id_('Q'),
 
@@ -1074,7 +1107,7 @@ function addQuestion(
 
     CreatedAt:
       now_()
-  });
+  }));
 }
 
 function updateQuestion(
@@ -1558,7 +1591,7 @@ function getInvitations(
       })
     );
 
-  return rows_('Undangan')
+  return clientSafe_(rows_('Undangan')
     .filter(function(i) {
 
       return !examId ||
@@ -1589,7 +1622,7 @@ function getInvitations(
               : i.ExamID
         }
       );
-    });
+    }));
 }
 
 function sendInvitation(
@@ -1796,7 +1829,7 @@ function getResults(
       })
     );
 
-  return rows_('Nilai')
+  return clientSafe_(rows_('Nilai')
     .filter(function(r) {
 
       return !examId ||
@@ -1836,7 +1869,7 @@ function getResults(
             r.ExamID
         }
       );
-    });
+    }));
 }
 
 /* =========================
@@ -1862,7 +1895,7 @@ function getReminders(
       })
     );
 
-  return rows_('Pengingat')
+  return clientSafe_(rows_('Pengingat')
     .filter(function(r) {
 
       return !examId ||
@@ -1883,7 +1916,7 @@ function getReminders(
               : r.ExamID
         }
       );
-    });
+    }));
 }
 
 function addReminder(
@@ -1903,7 +1936,7 @@ function addReminder(
     );
   }
 
-  return append_('Pengingat', {
+  return clientSafe_(append_('Pengingat', {
 
     ReminderID: id_('REM'),
 
@@ -1921,7 +1954,7 @@ function addReminder(
       data.Waktu
         ? new Date(data.Waktu)
         : now_()
-  });
+  }));
 }
 
 function deleteReminder(
@@ -1946,7 +1979,7 @@ function getAdmins(token) {
 
   requireAdmin_(token);
 
-  return rows_('Admin').map(function(a) {
+  return clientSafe_(rows_('Admin').map(function(a) {
 
     return {
 
@@ -1962,7 +1995,7 @@ function getAdmins(token) {
 
       CreatedAt: a.CreatedAt
     };
-  });
+  }));
 }
 
 function addAdmin(
