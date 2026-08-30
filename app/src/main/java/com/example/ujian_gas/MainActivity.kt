@@ -350,11 +350,19 @@ class MainActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                activeExam = exam
-                examQuestions = qs
-                examAnswers.clear()
-                examQuestionIndex = 0
-                examSubmitting = false
+                val requestedExamId = exam.optString("id")
+                val sameActiveExam = examActive &&
+                    activeExam?.optString("id") == requestedExamId &&
+                    examQuestions.length() > 0
+
+                if (!sameActiveExam) {
+                    activeExam = exam
+                    examQuestions = qs
+                    examAnswers.clear()
+                    examQuestionIndex = 0
+                    examSubmitting = false
+                }
+
                 examActive = true
                 renderExamQuestion()
             } catch (e: Exception) {
