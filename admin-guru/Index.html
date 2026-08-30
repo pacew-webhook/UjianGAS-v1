@@ -16,6 +16,7 @@
 .invite-layout{display:grid;grid-template-columns:1fr 1fr;gap:16px}.select-row{display:flex;gap:7px;margin:12px 0}.student-item{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid #eef2f7;border-radius:10px;margin-bottom:7px}.student-item input{width:auto}.field{margin-bottom:12px}.empty{padding:30px;text-align:center;color:var(--muted)}.hint{font-size:12px;color:var(--muted)}
 .modal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;padding:20px;overflow:auto}.modal-card{width:min(700px,100%);margin:40px auto;background:#fff;border-radius:20px;padding:24px;position:relative;box-shadow:0 30px 90px rgba(0,0,0,.2)}.modal-close{position:absolute;right:12px;top:10px;background:#f1f5f9;color:#475569;border-radius:10px;width:34px;height:34px;font-size:22px}.modal-title{margin-bottom:18px}.modal-form{display:grid;gap:13px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:5px}.check-row{display:flex;gap:8px;align-items:center}.check-row input{width:auto}.toast{position:fixed;right:20px;bottom:20px;z-index:100;background:#172033;color:#fff;padding:12px 15px;border-radius:12px;box-shadow:0 15px 40px rgba(0,0,0,.2);max-width:360px}.loading{position:fixed;inset:0;background:rgba(255,255,255,.65);z-index:90;display:grid;place-items:center;align-content:center;gap:8px;color:#334155;font-weight:800}.spinner{width:30px;height:30px;border:3px solid #dbeafe;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.dashboard-grid,.invite-layout{grid-template-columns:1fr}.sidebar{width:195px}main{padding:20px}.top-actions .badge{display:none}}
+.page-actions{display:flex;gap:8px;flex-wrap:wrap}.import-info{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:12px;color:var(--muted);line-height:1.5}
 @media(max-width:650px){.topbar{padding:0 12px}.admin-name{display:none}.app-layout{display:block}.sidebar{position:fixed;left:0;right:0;bottom:0;width:100%;height:62px;z-index:30;display:flex;flex-direction:row;overflow-x:auto;padding:6px;border-right:0;border-top:1px solid var(--line)}.sidebar button{min-width:82px;text-align:center;padding:7px 5px;font-size:11px}.sidebar button span{display:block;margin:2px 0 0}.page-head{display:block}.page-head>button{margin-top:10px}.cards{gap:9px}.stat-card{padding:12px}.stat-icon{width:38px;height:38px;font-size:18px}.stat-card b{font-size:23px}.dashboard-grid{gap:10px}main{padding:16px;padding-bottom:82px}.toolbar{display:grid}.toolbar .search{max-width:none}.form-grid,.options,.quick-grid{grid-template-columns:1fr}.modal{padding:10px}.modal-card{margin:15px auto;padding:18px}}
 </style>
 
@@ -84,7 +85,7 @@
       </section>
 
       <section id="questions" class="page">
-        <div class="page-head"><div><div class="eyebrow">BANK SOAL</div><h1>Soal Pilihan Ganda</h1><p class="muted">Tambah, edit, dan hapus soal per ujian.</p></div><button class="primary" onclick="openQuestionModal()">＋ Tambah Soal</button></div>
+        <div class="page-head"><div><div class="eyebrow">BANK SOAL</div><h1>Soal Pilihan Ganda</h1><p class="muted">Tambah, edit, hapus, atau import soal dari Excel.</p></div><div class="page-actions"><button class="ghost" onclick="openImportQuestionsModal()">📥 Import Excel</button><button class="primary" onclick="openQuestionModal()">＋ Tambah Soal</button></div></div>
         <div class="toolbar"><select id="questionExamFilter" onchange="loadQuestions()"></select><input id="questionSearch" class="search" placeholder="Cari pertanyaan…" oninput="renderQuestions()"></div>
         <div id="questionList"></div>
       </section>
@@ -268,6 +269,38 @@ async function loadQuestions(){try{QUESTIONS=await call('getQuestions',TOKEN,$('
 function renderQuestions(){const q=($('questionSearch')?.value||'').toLowerCase();const data=QUESTIONS.filter(x=>String(x.Pertanyaan).toLowerCase().includes(q));$('questionList').innerHTML=data.length?data.map(x=>`<div class="item-card"><div class="item-top"><div><div class="meta">${esc(examName(x.ExamID))} • Bobot ${esc(x.Bobot||1)}</div><div class="question-text">${esc(x.Pertanyaan)}</div></div><span class="status published">${esc(x.JawabanBenar)}</span></div><div class="options"><div class="option ${x.JawabanBenar==='A'?'correct':''}"><b>A.</b> ${esc(x.PilihanA)}</div><div class="option ${x.JawabanBenar==='B'?'correct':''}"><b>B.</b> ${esc(x.PilihanB)}</div><div class="option ${x.JawabanBenar==='C'?'correct':''}"><b>C.</b> ${esc(x.PilihanC)}</div><div class="option ${x.JawabanBenar==='D'?'correct':''}"><b>D.</b> ${esc(x.PilihanD)}</div></div><div class="item-actions"><button class="small-btn" onclick="openQuestionModal('${esc(x.QuestionID)}')">Edit</button><button class="danger-btn" onclick="removeQuestion('${esc(x.QuestionID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada soal untuk filter ini.');}
 function openQuestionModal(id=''){const q=QUESTIONS.find(x=>String(x.QuestionID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Soal':'Tambah Soal'}</h2><form id="questionForm" class="modal-form"><label>Ujian<select name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}" ${String(q.ExamID)===String(e.ExamID)?'selected':''}>${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>Pertanyaan<textarea name="Pertanyaan" required>${esc(q.Pertanyaan||'')}</textarea></label><div class="form-grid"><label>Pilihan A<input name="PilihanA" value="${esc(q.PilihanA||'')}" required></label><label>Pilihan B<input name="PilihanB" value="${esc(q.PilihanB||'')}" required></label><label>Pilihan C<input name="PilihanC" value="${esc(q.PilihanC||'')}" required></label><label>Pilihan D<input name="PilihanD" value="${esc(q.PilihanD||'')}" required></label><label>Jawaban Benar<select name="JawabanBenar"><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>Bobot<input type="number" name="Bobot" min="0.1" step="0.1" value="${esc(q.Bobot||1)}"></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);if(q.JawabanBenar)$('questionForm').JawabanBenar.value=q.JawabanBenar;$('questionForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(ev.target));if(id)await call('updateQuestion',TOKEN,id,d);else await call('addQuestion',TOKEN,d);closeModal();toast('Soal tersimpan.');await loadQuestions();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};}
 async function removeQuestion(id){if(!confirm('Hapus soal ini?'))return;try{busy(true);await call('deleteQuestion',TOKEN,id);toast('Soal dihapus.');await loadQuestions();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
+function openImportQuestionsModal(){
+  if(!EXAMS.length){toast('Belum ada ujian. Buat ujian terlebih dahulu.');return;}
+  openModal(`<h2 class="modal-title">Import Bank Soal Excel</h2><form id="importQuestionForm" class="modal-form"><div class="import-info"><b>Format Excel (.xlsx)</b><br>Gunakan header: <b>Pertanyaan, PilihanA, PilihanB, PilihanC, PilihanD, JawabanBenar</b>. Kolom <b>Bobot</b> opsional. Sheet bernama <b>Soal</b> akan dipilih otomatis jika ada.</div><label>Ujian tujuan<select id="importExamId" name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>File Excel (.xlsx)<input id="questionExcelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label><label>Mode import<select id="questionImportMode" name="Mode"><option value="APPEND">Tambah ke soal yang sudah ada</option><option value="REPLACE">Ganti semua soal untuk ujian ini</option></select></label><div class="hint">Mode Ganti akan menghapus soal lama untuk ujian yang dipilih setelah file lolos validasi.</div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary" type="submit">📥 Import Soal</button></div></form>`);
+  $('importQuestionForm').onsubmit=async ev=>{
+    ev.preventDefault();
+    const file=$('questionExcelFile')?.files?.[0];
+    const examId=$('importExamId')?.value||'';
+    const mode=$('questionImportMode')?.value||'APPEND';
+    if(!file)return toast('Pilih file Excel terlebih dahulu.');
+    if(!/\.xlsx$/i.test(file.name))return toast('File harus berformat .xlsx.');
+    if(file.size>10*1024*1024)return toast('Ukuran file maksimal 10 MB.');
+    try{
+      busy(true);
+      const base64=await readFileBase64_(file);
+      const r=await call('importQuestionsExcel',TOKEN,file.name,base64,examId,mode);
+      closeModal();
+      toast(`Import berhasil: ${r.imported} soal. Total ujian: ${r.totalForExam}.`);
+      await loadQuestions();
+      await dashboard();
+    }catch(e){toast(msg(e));}
+    finally{busy(false);}
+  };
+}
+function readFileBase64_(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{try{resolve(String(reader.result).split(',')[1]||'');}catch(e){reject(e);}};
+    reader.onerror=()=>reject(new Error('Gagal membaca file Excel.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 
 /* INVITATIONS */
 async function invite(){try{if(!EXAMS.length)await loadExams();if(!STUDENTS.length)await loadStudents();fillExamSelects();renderInviteStudents();await loadInvitations();}catch(e){toast(msg(e));}}

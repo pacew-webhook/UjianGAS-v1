@@ -1151,6 +1151,234 @@ function deleteQuestion(
 }
 
 /* =========================
+   ADMIN - IMPORT BANK SOAL EXCEL
+   ========================= */
+
+function importQuestionsExcel(token, fileName, base64, examId, mode) {
+  requireAdmin_(token);
+
+  if (!base64) throw new Error('File Excel belum dipilih.');
+  if (!examId) throw new Error('Pilih ujian tujuan terlebih dahulu.');
+
+  const examExists = rows_('Ujian').some(function(e) {
+    return String(e.ExamID) === String(examId);
+  });
+  if (!examExists) throw new Error('Ujian tujuan tidak ditemukan.');
+
+  const name = String(fileName || 'bank-soal.xlsx').trim();
+  if (!/\.xlsx$/i.test(name)) {
+    throw new Error('Format harus .xlsx. Gunakan file Excel modern (.xlsx).');
+  }
+
+  const bytes = Utilities.base64Decode(String(base64));
+  const blob = Utilities.newBlob(
+    bytes,
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    name
+  );
+
+  const rows = parseXlsxRows_(blob);
+  if (!rows.length) throw new Error('Sheet Excel tidak berisi data.');
+
+  const normalized = normalizeQuestionImportRows_(rows, examId);
+  if (!normalized.length) throw new Error('Tidak ada baris soal yang valid.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    if (String(mode || 'APPEND').toUpperCase() === 'REPLACE') {
+      const sheet = sh_('Soal');
+      const existing = rows_('Soal').filter(function(q) {
+        return String(q.ExamID) === String(examId);
+      });
+      for (let i = existing.length - 1; i >= 0; i--) {
+        sheet.deleteRow(existing[i].__row);
+      }
+    }
+
+    normalized.forEach(function(q) {
+      append_('Soal', q);
+    });
+
+    SpreadsheetApp.flush();
+
+    const verify = rows_('Soal').filter(function(q) {
+      return String(q.ExamID) === String(examId);
+    });
+
+    if (verify.length < normalized.length) {
+      throw new Error('Verifikasi gagal: sebagian soal tidak tersimpan.');
+    }
+
+    return {
+      ok: true,
+      imported: normalized.length,
+      totalForExam: verify.length,
+      examId: examId,
+      mode: String(mode || 'APPEND').toUpperCase(),
+      fileName: name
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function parseXlsxRows_(blob) {
+  const files = Utilities.unzip(blob);
+  const map = {};
+  files.forEach(function(f) { map[f.getName()] = f; });
+
+  const workbookBlob = map['xl/workbook.xml'];
+  if (!workbookBlob) throw new Error('File Excel tidak valid: workbook.xml tidak ditemukan.');
+
+  const ns = XmlService.getNamespace('http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+  const relNs = XmlService.getNamespace('http://schemas.openxmlformats.org/officeDocument/2006/relationships');
+  const workbook = XmlService.parse(workbookBlob.getDataAsString()).getRootElement();
+  const sheetsNode = workbook.getChild('sheets', ns);
+  if (!sheetsNode) throw new Error('Excel tidak memiliki sheet.');
+
+  const relBlob = map['xl/_rels/workbook.xml.rels'];
+  const relMap = {};
+  if (relBlob) {
+    const relRoot = XmlService.parse(relBlob.getDataAsString()).getRootElement();
+    relRoot.getChildren().forEach(function(r) {
+      relMap[r.getAttribute('Id').getValue()] = r.getAttribute('Target').getValue().replace(/^\//, '');
+    });
+  }
+
+  let selected = null;
+  sheetsNode.getChildren('sheet', ns).forEach(function(sheet) {
+    const name = sheet.getAttribute('name').getValue();
+    const rid = sheet.getAttribute('id', relNs);
+    const rawTarget = rid && relMap[rid.getValue()];
+    const target = rawTarget ? (rawTarget.indexOf('xl/') === 0 ? rawTarget : 'xl/' + rawTarget.replace(/^\//, '')) : null;
+    if (!target) return;
+    if (!selected || name.toLowerCase() === 'soal') {
+      selected = { name: name, path: target };
+    }
+  });
+  if (!selected) throw new Error('Sheet Excel tidak ditemukan.');
+
+  const sheetBlob = map[selected.path] || map['xl/' + selected.path.replace(/^xl\//, '')];
+  if (!sheetBlob) throw new Error('Isi sheet Excel tidak ditemukan: ' + selected.name);
+
+  const shared = [];
+  if (map['xl/sharedStrings.xml']) {
+    const ssRoot = XmlService.parse(map['xl/sharedStrings.xml'].getDataAsString()).getRootElement();
+    const ssNs = ns;
+    ssRoot.getChildren('si', ssNs).forEach(function(si) {
+      shared.push(xmlText_(si, ssNs));
+    });
+  }
+
+  const sheetRoot = XmlService.parse(sheetBlob.getDataAsString()).getRootElement();
+  const sheetData = sheetRoot.getChild('sheetData', ns);
+  if (!sheetData) return [];
+
+  return sheetData.getChildren('row', ns).map(function(row) {
+    const cells = {};
+    row.getChildren('c', ns).forEach(function(c) {
+      const refAttr = c.getAttribute('r');
+      if (!refAttr) return;
+      const ref = refAttr.getValue();
+      const col = ref.replace(/\d+/g, '').toUpperCase();
+      const typeAttr = c.getAttribute('t');
+      const type = typeAttr ? typeAttr.getValue() : '';
+      const v = c.getChild('v', ns);
+      const inline = c.getChild('is', ns);
+      let value = '';
+
+      if (type === 's' && v) {
+        const idx = Number(v.getText());
+        value = shared[idx] == null ? '' : shared[idx];
+      } else if (type === 'inlineStr' && inline) {
+        value = xmlText_(inline, ns);
+      } else if (v) {
+        value = v.getText();
+      } else if (inline) {
+        value = xmlText_(inline, ns);
+      }
+      cells[col] = value;
+    });
+    return cells;
+  });
+}
+
+function xmlText_(element, ns) {
+  const name = element.getName ? element.getName() : '';
+  if (name === 't') return element.getText();
+  let out = '';
+  element.getChildren().forEach(function(child) {
+    out += xmlText_(child, ns);
+  });
+  return out;
+}
+
+function normalizeQuestionImportRows_(rows, examId) {
+  if (!rows.length) return [];
+
+  const headers = rows[0];
+  const headerKeys = Object.keys(headers);
+  const getHeader = function(aliases) {
+    const wanted = aliases.map(function(x) { return String(x).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+    for (let i = 0; i < headerKeys.length; i++) {
+      const k = headerKeys[i];
+      const normalized = String(headers[k] || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (wanted.indexOf(normalized) >= 0) return k;
+    }
+    return null;
+  };
+
+  const columns = {
+    question: getHeader(['Pertanyaan','Soal','Question','QuestionText']),
+    a: getHeader(['PilihanA','A','OptionA','AnswerA']),
+    b: getHeader(['PilihanB','B','OptionB','AnswerB']),
+    c: getHeader(['PilihanC','C','OptionC','AnswerC']),
+    d: getHeader(['PilihanD','D','OptionD','AnswerD']),
+    answer: getHeader(['JawabanBenar','Kunci','Answer','CorrectAnswer']),
+    weight: getHeader(['Bobot','Weight','Score'])
+  };
+
+  if (!columns.question || !columns.a || !columns.b || !columns.c || !columns.d || !columns.answer) {
+    throw new Error('Kolom wajib tidak lengkap. Wajib: Pertanyaan, PilihanA, PilihanB, PilihanC, PilihanD, JawabanBenar.');
+  }
+
+  const result = [];
+  rows.slice(1).forEach(function(row, index) {
+    const question = String(row[columns.question] || '').trim();
+    const a = String(row[columns.a] || '').trim();
+    const b = String(row[columns.b] || '').trim();
+    const c = String(row[columns.c] || '').trim();
+    const d = String(row[columns.d] || '').trim();
+    const answer = String(row[columns.answer] || '').trim().toUpperCase();
+
+    if (!question && !a && !b && !c && !d && !answer) return;
+
+    if (!question || !a || !b || !c || !d) {
+      throw new Error('Baris Excel ' + (index + 2) + ' tidak lengkap.');
+    }
+    if (['A','B','C','D'].indexOf(answer) < 0) {
+      throw new Error('Baris Excel ' + (index + 2) + ': JawabanBenar harus A, B, C, atau D.');
+    }
+
+    result.push({
+      QuestionID: id_('Q'),
+      ExamID: examId,
+      Pertanyaan: question,
+      PilihanA: a,
+      PilihanB: b,
+      PilihanC: c,
+      PilihanD: d,
+      JawabanBenar: answer,
+      Bobot: safeNumber_(columns.weight ? row[columns.weight] : 1, 1) || 1,
+      CreatedAt: now_()
+    });
+  });
+
+  return result;
+}
+
+/* =========================
    ADMIN - UNDANGAN
    ========================= */
 

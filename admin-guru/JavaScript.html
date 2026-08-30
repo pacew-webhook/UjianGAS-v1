@@ -13,8 +13,74 @@ function call(fn, ...args) {
 
 function busy(on) { $('loading').hidden = !on; }
 function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(window.__toast); window.__toast = setTimeout(() => $('toast').hidden = true, 2600); }
-function showLogin(text='') { $('loginView').hidden = false; $('appView').hidden = true; $('loginMsg').textContent = text; }
-function showApp() { $('loginView').hidden = true; $('appView').hidden = false; $('adminName').textContent = ADMIN?.Nama || 'Guru'; $('adminRole').textContent = ADMIN?.Role || 'ADMIN'; }
+function finishBoot(){ if($('bootView')) $('bootView').hidden=true; }
+function showLogin(text='') { finishBoot(); $('loginView').hidden = false; $('loginView').style.display = 'grid'; $('appView').hidden = true; $('appView').style.display = 'none'; $('loginMsg').textContent = text; }
+function showApp() { finishBoot(); $('loginView').hidden = true; $('loginView').style.display = 'none'; $('appView').hidden = false; $('appView').style.display = 'block'; $('adminName').textContent = ADMIN?.Nama || 'Guru'; $('adminRole').textContent = ADMIN?.Role || 'ADMIN'; }
+
+// Pulihkan session SEBELUM memilih tampilan Login/Dashboard.
+// Selama proses ini bootView tetap terlihat sehingga halaman Login tidak berkedip.
+function tokenFromHash_() {
+  try {
+    const raw = String(window.location.hash || '').replace(/^#/, '');
+    const m = raw.match(/(?:^|&)ugas_token=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  } catch (_) { return ''; }
+}
+
+function clearTokenHash_() {
+  try {
+    if (window.location.hash) history.replaceState(null, document.title, window.location.pathname + window.location.search);
+  } catch (_) {
+    try { window.location.hash = ''; } catch (__) {}
+  }
+}
+
+function persistClientSession_() {
+  try {
+    if (TOKEN) localStorage.setItem('ugas_token', TOKEN);
+    if (ADMIN) localStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+  } catch (_) {}
+}
+
+async function restoreAdminSession_() {
+  // PENTING: token juga disimpan di URL fragment. Fragment tetap ikut saat
+  // halaman di-refresh, sehingga pemulihan tidak bergantung hanya pada
+  // localStorage/sessionStorage yang dapat berubah pada iframe HtmlService.
+  TOKEN = tokenFromHash_() || localStorage.getItem('ugas_token') || sessionStorage.getItem('ugas_token') || '';
+  const savedAdmin = localStorage.getItem('ugas_admin') || sessionStorage.getItem('ugas_admin') || '';
+  try { ADMIN = JSON.parse(savedAdmin || 'null'); } catch (_) { ADMIN = null; }
+
+  // Selama boot, Login dan Dashboard sama-sama disembunyikan.
+  if ($('loginView')) $('loginView').style.display = 'none';
+  if ($('appView')) $('appView').style.display = 'none';
+  if ($('bootView')) $('bootView').hidden = false;
+
+  if (!TOKEN) {
+    showLogin();
+    return;
+  }
+
+  try {
+    const d = await call('getDashboard', TOKEN);
+    if (!d || d.ok === false) throw new Error('Sesi tidak valid. Silakan login kembali.');
+    persistClientSession_();
+    showApp();
+    page('dashboard');
+  } catch (e) {
+    TOKEN = ''; ADMIN = null;
+    localStorage.removeItem('ugas_token');
+    localStorage.removeItem('ugas_admin');
+    sessionStorage.removeItem('ugas_token');
+    sessionStorage.removeItem('ugas_admin');
+    clearTokenHash_();
+    showLogin('Sesi tidak valid atau sudah berakhir. Silakan login kembali.');
+  }
+}
+
+// Setelah browser memulihkan halaman dari back/forward cache, cek lagi session.
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) restoreAdminSession_();
+});
 
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -24,8 +90,9 @@ $('loginForm').addEventListener('submit', async e => {
     const r = await call('loginAdmin', f.get('email'), f.get('password'));
     if (!r?.token) throw new Error('Login gagal.');
     TOKEN = r.token; ADMIN = r.admin;
-    localStorage.setItem('ugas_token', TOKEN);
-    localStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+    persistClientSession_();
+    // URL fragment dipakai sebagai fallback yang tahan refresh pada HtmlService.
+    history.replaceState(null, document.title, window.location.pathname + window.location.search + '#ugas_token=' + encodeURIComponent(TOKEN));
     showApp(); page('dashboard');
   } catch (e) { $('loginMsg').textContent = msg(e); }
   finally { busy(false); }
@@ -33,7 +100,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 async function logout() {
   try { await call('logoutAdmin', TOKEN); } catch(e) {}
-  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin();
+  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); clearTokenHash_(); showLogin();
 }
 
 function page(id) {
@@ -50,7 +117,7 @@ async function dashboard() {
     const d = await call('getDashboard', TOKEN);
     $('studentsCount').textContent=d.students||0; $('examsCount').textContent=d.exams||0; $('questionsCount').textContent=d.questions||0; $('resultsCount').textContent=d.results||0;
     $('activeStudents').textContent=(d.activeStudents||0)+' aktif'; $('publishedExams').textContent=(d.publishedExams||0)+' published';
-  } catch(e) { if(/Sesi/.test(msg(e))) { localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin(msg(e)); } }
+  } catch(e) { if(/Sesi/.test(msg(e))) { TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); clearTokenHash_(); showLogin(msg(e)); } }
 }
 
 /* STUDENTS */
@@ -80,6 +147,38 @@ async function loadQuestions(){try{QUESTIONS=await call('getQuestions',TOKEN,$('
 function renderQuestions(){const q=($('questionSearch')?.value||'').toLowerCase();const data=QUESTIONS.filter(x=>String(x.Pertanyaan).toLowerCase().includes(q));$('questionList').innerHTML=data.length?data.map(x=>`<div class="item-card"><div class="item-top"><div><div class="meta">${esc(examName(x.ExamID))} • Bobot ${esc(x.Bobot||1)}</div><div class="question-text">${esc(x.Pertanyaan)}</div></div><span class="status published">${esc(x.JawabanBenar)}</span></div><div class="options"><div class="option ${x.JawabanBenar==='A'?'correct':''}"><b>A.</b> ${esc(x.PilihanA)}</div><div class="option ${x.JawabanBenar==='B'?'correct':''}"><b>B.</b> ${esc(x.PilihanB)}</div><div class="option ${x.JawabanBenar==='C'?'correct':''}"><b>C.</b> ${esc(x.PilihanC)}</div><div class="option ${x.JawabanBenar==='D'?'correct':''}"><b>D.</b> ${esc(x.PilihanD)}</div></div><div class="item-actions"><button class="small-btn" onclick="openQuestionModal('${esc(x.QuestionID)}')">Edit</button><button class="danger-btn" onclick="removeQuestion('${esc(x.QuestionID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada soal untuk filter ini.');}
 function openQuestionModal(id=''){const q=QUESTIONS.find(x=>String(x.QuestionID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Soal':'Tambah Soal'}</h2><form id="questionForm" class="modal-form"><label>Ujian<select name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}" ${String(q.ExamID)===String(e.ExamID)?'selected':''}>${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>Pertanyaan<textarea name="Pertanyaan" required>${esc(q.Pertanyaan||'')}</textarea></label><div class="form-grid"><label>Pilihan A<input name="PilihanA" value="${esc(q.PilihanA||'')}" required></label><label>Pilihan B<input name="PilihanB" value="${esc(q.PilihanB||'')}" required></label><label>Pilihan C<input name="PilihanC" value="${esc(q.PilihanC||'')}" required></label><label>Pilihan D<input name="PilihanD" value="${esc(q.PilihanD||'')}" required></label><label>Jawaban Benar<select name="JawabanBenar"><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>Bobot<input type="number" name="Bobot" min="0.1" step="0.1" value="${esc(q.Bobot||1)}"></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);if(q.JawabanBenar)$('questionForm').JawabanBenar.value=q.JawabanBenar;$('questionForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(ev.target));if(id)await call('updateQuestion',TOKEN,id,d);else await call('addQuestion',TOKEN,d);closeModal();toast('Soal tersimpan.');await loadQuestions();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};}
 async function removeQuestion(id){if(!confirm('Hapus soal ini?'))return;try{busy(true);await call('deleteQuestion',TOKEN,id);toast('Soal dihapus.');await loadQuestions();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
+function openImportQuestionsModal(){
+  if(!EXAMS.length){toast('Belum ada ujian. Buat ujian terlebih dahulu.');return;}
+  openModal(`<h2 class="modal-title">Import Bank Soal Excel</h2><form id="importQuestionForm" class="modal-form"><div class="import-info"><b>Format Excel (.xlsx)</b><br>Gunakan header: <b>Pertanyaan, PilihanA, PilihanB, PilihanC, PilihanD, JawabanBenar</b>. Kolom <b>Bobot</b> opsional. Sheet bernama <b>Soal</b> akan dipilih otomatis jika ada.</div><label>Ujian tujuan<select id="importExamId" name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>File Excel (.xlsx)<input id="questionExcelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label><label>Mode import<select id="questionImportMode" name="Mode"><option value="APPEND">Tambah ke soal yang sudah ada</option><option value="REPLACE">Ganti semua soal untuk ujian ini</option></select></label><div class="hint">Mode Ganti akan menghapus soal lama untuk ujian yang dipilih setelah file lolos validasi.</div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary" type="submit">📥 Import Soal</button></div></form>`);
+  $('importQuestionForm').onsubmit=async ev=>{
+    ev.preventDefault();
+    const file=$('questionExcelFile')?.files?.[0];
+    const examId=$('importExamId')?.value||'';
+    const mode=$('questionImportMode')?.value||'APPEND';
+    if(!file)return toast('Pilih file Excel terlebih dahulu.');
+    if(!/\.xlsx$/i.test(file.name))return toast('File harus berformat .xlsx.');
+    if(file.size>10*1024*1024)return toast('Ukuran file maksimal 10 MB.');
+    try{
+      busy(true);
+      const base64=await readFileBase64_(file);
+      const r=await call('importQuestionsExcel',TOKEN,file.name,base64,examId,mode);
+      closeModal();
+      toast(`Import berhasil: ${r.imported} soal. Total ujian: ${r.totalForExam}.`);
+      await loadQuestions();
+      await dashboard();
+    }catch(e){toast(msg(e));}
+    finally{busy(false);}
+  };
+}
+function readFileBase64_(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{try{resolve(String(reader.result).split(',')[1]||'');}catch(e){reject(e);}};
+    reader.onerror=()=>reject(new Error('Gagal membaca file Excel.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 
 /* INVITATIONS */
 async function invite(){try{if(!EXAMS.length)await loadExams();if(!STUDENTS.length)await loadStudents();fillExamSelects();renderInviteStudents();await loadInvitations();}catch(e){toast(msg(e));}}
@@ -115,20 +214,5 @@ function formatDateInput(v){if(!v)return '';const d=new Date(v);if(!isNaN(d.getT
 function formatTimeInput(v){if(!v)return '';const s=String(v);const m=s.match(/(\d{1,2}):(\d{2})/);return m?m[1].padStart(2,'0')+':'+m[2]:s.slice(0,5)}
 function formatDateTime(v){if(!v)return '-';const d=new Date(v);return isNaN(d.getTime())?String(v):d.toLocaleString('id-ID')}
 
-function tokenFromHash_() {
-  try { const m = String(window.location.hash || '').replace(/^#/, '').match(/(?:^|&)ugas_token=([^&]+)/); return m ? decodeURIComponent(m[1]) : ''; }
-  catch (_) { return ''; }
-}
-function clearTokenHash_() {
-  try { if (window.location.hash) history.replaceState(null, document.title, window.location.pathname + window.location.search); }
-  catch (_) { try { window.location.hash = ''; } catch (__) {} }
-}
-async function restoreAdminSession_() {
-  TOKEN = tokenFromHash_() || localStorage.getItem('ugas_token') || sessionStorage.getItem('ugas_token') || '';
-  try { ADMIN = JSON.parse(localStorage.getItem('ugas_admin') || sessionStorage.getItem('ugas_admin') || 'null'); } catch (_) { ADMIN = null; }
-  if (!TOKEN) { showLogin(); return; }
-  try { await call('getDashboard', TOKEN); showApp(); page('dashboard'); }
-  catch (e) { TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); clearTokenHash_(); showLogin('Sesi tidak valid atau sudah berakhir. Silakan login kembali.'); }
-}
 restoreAdminSession_();
 </script>
