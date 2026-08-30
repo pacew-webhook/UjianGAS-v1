@@ -24,8 +24,8 @@ $('loginForm').addEventListener('submit', async e => {
     const r = await call('loginAdmin', f.get('email'), f.get('password'));
     if (!r?.token) throw new Error('Login gagal.');
     TOKEN = r.token; ADMIN = r.admin;
-    sessionStorage.setItem('ugas_token', TOKEN);
-    sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+    localStorage.setItem('ugas_token', TOKEN);
+    localStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
     showApp(); page('dashboard');
   } catch (e) { $('loginMsg').textContent = msg(e); }
   finally { busy(false); }
@@ -33,7 +33,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 async function logout() {
   try { await call('logoutAdmin', TOKEN); } catch(e) {}
-  TOKEN=''; ADMIN=null; sessionStorage.clear(); showLogin();
+  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin();
 }
 
 function page(id) {
@@ -50,7 +50,7 @@ async function dashboard() {
     const d = await call('getDashboard', TOKEN);
     $('studentsCount').textContent=d.students||0; $('examsCount').textContent=d.exams||0; $('questionsCount').textContent=d.questions||0; $('resultsCount').textContent=d.results||0;
     $('activeStudents').textContent=(d.activeStudents||0)+' aktif'; $('publishedExams').textContent=(d.publishedExams||0)+' published';
-  } catch(e) { if(/Sesi/.test(msg(e))) { sessionStorage.clear(); showLogin(msg(e)); } }
+  } catch(e) { if(/Sesi/.test(msg(e))) { localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin(msg(e)); } }
 }
 
 /* STUDENTS */
@@ -115,5 +115,5 @@ function formatDateInput(v){if(!v)return '';const d=new Date(v);if(!isNaN(d.getT
 function formatTimeInput(v){if(!v)return '';const s=String(v);const m=s.match(/(\d{1,2}):(\d{2})/);return m?m[1].padStart(2,'0')+':'+m[2]:s.slice(0,5)}
 function formatDateTime(v){if(!v)return '-';const d=new Date(v);return isNaN(d.getTime())?String(v):d.toLocaleString('id-ID')}
 
-(async()=>{try{TOKEN=sessionStorage.getItem('ugas_token')||'';ADMIN=JSON.parse(sessionStorage.getItem('ugas_admin')||'null');if(TOKEN&&ADMIN){await call('getDashboard',TOKEN);showApp();page('dashboard')}else showLogin();}catch(e){TOKEN='';ADMIN=null;sessionStorage.clear();showLogin();}})();
+(async()=>{try{TOKEN=localStorage.getItem('ugas_token')||'';ADMIN=JSON.parse(localStorage.getItem('ugas_admin')||'null');if(TOKEN&&ADMIN){await call('getDashboard',TOKEN);showApp();page('dashboard')}else showLogin();}catch(e){TOKEN='';ADMIN=null;localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin');showLogin();}})();
 </script>
