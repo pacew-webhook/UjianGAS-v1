@@ -1281,9 +1281,12 @@ function importQuestionsExcel(token, fileName, base64, examId, mode) {
 function parseXlsxRows_(blob) {
   let files;
   try {
-    files = Utilities.unzip(blob);
+    // XLSX adalah ZIP. Beberapa runtime Apps Script lebih konsisten jika
+    // blob diberi MIME type application/zip sebelum Utilities.unzip().
+    const zipBlob = blob.copyBlob().setContentType('application/zip');
+    files = Utilities.unzip(zipBlob);
   } catch (err) {
-    throw new Error('File bukan XLSX yang valid atau rusak. Silakan simpan ulang sebagai .xlsx.');
+    throw new Error('File bukan XLSX yang valid atau rusak. Silakan simpan ulang sebagai .xlsx. Detail: ' + String(err.message || err));
   }
 
   const map = {};
