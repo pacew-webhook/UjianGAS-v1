@@ -23,7 +23,7 @@
 <body>
 
 <div id="bootView" class="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:60vh"><div style="text-align:center"><div style="font-size:28px;margin-bottom:10px">Ujian GAS</div><div>Memeriksa sesi...</div></div></div>
-<div id="loginView" class="login-screen" hidden>
+<div id="loginView" class="login-screen" hidden style="display:none!important">
   <div class="login-card">
     <div class="logo">🎓</div>
     <div class="eyebrow">UJIAN GAS</div>
@@ -38,7 +38,7 @@
   </div>
 </div>
 
-<div id="appView" hidden>
+<div id="appView" hidden style="display:none!important">
   <header class="topbar">
     <div class="brand"><span class="brand-icon">🎓</span><div><strong>Ujian GAS</strong><small>Admin Guru</small></div></div>
     <div class="top-actions"><span id="adminRole" class="badge"></span><span id="adminName" class="admin-name"></span><button class="ghost" onclick="logout()">Keluar</button></div>
@@ -135,17 +135,24 @@ function call(fn, ...args) {
 function busy(on) { $('loading').hidden = !on; }
 function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(window.__toast); window.__toast = setTimeout(() => $('toast').hidden = true, 2600); }
 function finishBoot(){ if($('bootView')) $('bootView').hidden=true; }
-function showLogin(text='') { finishBoot(); $('loginView').hidden = false; $('appView').hidden = true; $('loginMsg').textContent = text; }
-function showApp() { finishBoot(); $('loginView').hidden = true; $('appView').hidden = false; $('adminName').textContent = ADMIN?.Nama || 'Guru'; $('adminRole').textContent = ADMIN?.Role || 'ADMIN'; }
+function showLogin(text='') { finishBoot(); $('loginView').hidden = false; $('loginView').style.display = 'grid'; $('appView').hidden = true; $('appView').style.display = 'none'; $('loginMsg').textContent = text; }
+function showApp() { finishBoot(); $('loginView').hidden = true; $('loginView').style.display = 'none'; $('appView').hidden = false; $('appView').style.display = 'block'; $('adminName').textContent = ADMIN?.Nama || 'Guru'; $('adminRole').textContent = ADMIN?.Role || 'ADMIN'; }
 
 // Pulihkan session SEBELUM memilih tampilan Login/Dashboard.
 // Selama proses ini bootView tetap terlihat sehingga halaman Login tidak berkedip.
 async function restoreAdminSession_() {
-  TOKEN = localStorage.getItem('ugas_token') || '';
-  try { ADMIN = JSON.parse(localStorage.getItem('ugas_admin') || 'null'); }
-  catch (_) { ADMIN = null; }
+  // Apps Script HtmlService dapat membuat iframe baru saat refresh.
+  // Pulihkan dari localStorage terlebih dahulu, lalu fallback ke sessionStorage.
+  TOKEN = localStorage.getItem('ugas_token') || sessionStorage.getItem('ugas_token') || '';
+  const savedAdmin = localStorage.getItem('ugas_admin') || sessionStorage.getItem('ugas_admin') || '';
+  try { ADMIN = JSON.parse(savedAdmin || 'null'); } catch (_) { ADMIN = null; }
 
-  if (!TOKEN || !ADMIN) {
+  // Jangan pernah menampilkan form login selama proses pemulihan berlangsung.
+  if ($('loginView')) $('loginView').style.display = 'none';
+  if ($('appView')) $('appView').style.display = 'none';
+  if ($('bootView')) $('bootView').hidden = false;
+
+  if (!TOKEN) {
     showLogin();
     return;
   }
@@ -153,15 +160,25 @@ async function restoreAdminSession_() {
   try {
     const d = await call('getDashboard', TOKEN);
     if (!d || d.ok === false) throw new Error('Sesi tidak valid. Silakan login kembali.');
+    // Sinkronkan kembali kedua storage setelah session terbukti valid.
+    sessionStorage.setItem('ugas_token', TOKEN);
+    if (ADMIN) sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
     showApp();
     page('dashboard');
   } catch (e) {
     TOKEN = ''; ADMIN = null;
     localStorage.removeItem('ugas_token');
     localStorage.removeItem('ugas_admin');
+    sessionStorage.removeItem('ugas_token');
+    sessionStorage.removeItem('ugas_admin');
     showLogin('Sesi tidak valid atau sudah berakhir. Silakan login kembali.');
   }
 }
+
+// Setelah browser memulihkan halaman dari back/forward cache, cek lagi session.
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted) restoreAdminSession_();
+});
 
 $('loginForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -173,6 +190,8 @@ $('loginForm').addEventListener('submit', async e => {
     TOKEN = r.token; ADMIN = r.admin;
     localStorage.setItem('ugas_token', TOKEN);
     localStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+    sessionStorage.setItem('ugas_token', TOKEN);
+    sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
     showApp(); page('dashboard');
   } catch (e) { $('loginMsg').textContent = msg(e); }
   finally { busy(false); }
@@ -180,7 +199,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 async function logout() {
   try { await call('logoutAdmin', TOKEN); } catch(e) {}
-  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin();
+  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); showLogin();
 }
 
 function page(id) {

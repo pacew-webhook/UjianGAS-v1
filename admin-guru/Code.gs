@@ -424,6 +424,12 @@ function requireAdmin_(token) {
     throw new Error('Sesi berakhir. Silakan login kembali.');
   }
 
+  // Sliding session: aktivitas yang valid memperpanjang 6 jam dari sekarang.
+  session.expiresAt = Date.now() + (SESSION_SECONDS * 1000);
+  const refreshed = JSON.stringify(session);
+  sessionStore_().setProperty(key, refreshed);
+  CacheService.getScriptCache().put(key, refreshed, SESSION_SECONDS);
+
   return session;
 }
 
