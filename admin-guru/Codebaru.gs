@@ -1,6 +1,7 @@
 const SHEET_ID = '1sPB55UO_TbxQctmnHQ4FoRcPNNBuseOf';
 const SESSION_PREFIX = 'UGAS_ADMIN_SESSION_';
 const SESSION_SECONDS = 21600; // 6 jam
+const SESSION_STORAGE_PREFIX = 'UGAS_ADMIN_SESSION_V2_';
 
 function ss_() {
   return SpreadsheetApp.openById(SHEET_ID);
@@ -352,47 +353,77 @@ function createAdmin_(nama, email, password, role) {
    ADMIN SESSION
    ========================= */
 
+function sessionKey_(token) {
+  return SESSION_STORAGE_PREFIX + token;
+}
+
 function createSession_(admin) {
+  const token = Utilities.getUuid() + Utilities.getUuid();
+  const payload = {
+    AdminID: admin.AdminID,
+    Nama: admin.Nama,
+    Email: admin.Email,
+    Role: admin.Role,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + (SESSION_SECONDS * 1000)
+  };
+  const raw = JSON.stringify(payload);
 
-  const token =
-    Utilities.getUuid() +
-    Utilities.getUuid();
-
-  CacheService
-    .getScriptCache()
-    .put(
-      SESSION_PREFIX + token,
-      JSON.stringify({
-        AdminID: admin.AdminID,
-        Nama: admin.Nama,
-        Email: admin.Email,
-        Role: admin.Role
-      }),
-      SESSION_SECONDS
-    );
+  // Cache = cepat. Script Properties = persisten sehingga refresh tidak
+  // membuat session hilang hanya karena cache Apps Script berubah/ter-reset.
+  CacheService.getScriptCache().put(
+    SESSION_PREFIX + token,
+    raw,
+    SESSION_SECONDS
+  );
+  PropertiesService.getScriptProperties().setProperty(sessionKey_(token), raw);
 
   return token;
 }
 
 function requireAdmin_(token) {
-
+  token = String(token || '').trim();
   if (!token) {
-    throw new Error(
-      'Sesi tidak ditemukan. Silakan login.'
-    );
+    throw new Error('Sesi tidak ditemukan. Silakan login.');
   }
 
-  const raw = CacheService
-    .getScriptCache()
-    .get(SESSION_PREFIX + token);
+  let raw = CacheService.getScriptCache().get(SESSION_PREFIX + token);
+
+  // Fallback persisten untuk mengatasi cache miss saat browser di-refresh.
+  if (!raw) {
+    raw = PropertiesService.getScriptProperties().getProperty(sessionKey_(token));
+  }
 
   if (!raw) {
-    throw new Error(
-      'Sesi berakhir. Silakan login kembali.'
-    );
+    throw new Error('Sesi berakhir. Silakan login kembali.');
   }
 
-  return JSON.parse(raw);
+  let session;
+  try {
+    session = JSON.parse(raw);
+  } catch (err) {
+    PropertiesService.getScriptProperties().deleteProperty(sessionKey_(token));
+    throw new Error('Sesi tidak valid. Silakan login kembali.');
+  }
+
+  if (!session.expiresAt || Date.now() >= Number(session.expiresAt)) {
+    CacheService.getScriptCache().remove(SESSION_PREFIX + token);
+    PropertiesService.getScriptProperties().deleteProperty(sessionKey_(token));
+    throw new Error('Sesi berakhir. Silakan login kembali.');
+  }
+
+  // Refresh TTL on every authenticated request.
+  session.expiresAt = Date.now() + (SESSION_SECONDS * 1000);
+  raw = JSON.stringify(session);
+  CacheService.getScriptCache().put(SESSION_PREFIX + token, raw, SESSION_SECONDS);
+  PropertiesService.getScriptProperties().setProperty(sessionKey_(token), raw);
+
+  return {
+    AdminID: session.AdminID,
+    Nama: session.Nama,
+    Email: session.Email,
+    Role: session.Role
+  };
 }
 
 function loginAdmin(email, password) {
@@ -435,15 +466,11 @@ function loginAdmin(email, password) {
 }
 
 function logoutAdmin(token) {
-
+  token = String(token || '').trim();
   if (token) {
-    CacheService
-      .getScriptCache()
-      .remove(
-        SESSION_PREFIX + token
-      );
+    CacheService.getScriptCache().remove(SESSION_PREFIX + token);
+    PropertiesService.getScriptProperties().deleteProperty(sessionKey_(token));
   }
-
   return true;
 }
 
@@ -451,152 +478,151 @@ function logoutAdmin(token) {
    SHEET HELPERS
    ========================= */
 
+function normalizeHeader_(value) {
+  return String(value == null ? '' : value).replace(/^\uFEFF/, '').trim();
+}
+
 function rows_(sheetName) {
-
   const sheet = sh_(sheetName);
-
   const lastRow = sheet.getLastRow();
   const lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
 
-  if (lastRow < 2 || lastCol < 1) {
-    return [];
-  }
+  const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  const headers = values[0].map(normalizeHeader_);
 
-  const values = sheet
-    .getRange(
-      1,
-      1,
-      lastRow,
-      lastCol
-    )
-    .getValues();
-
-  const headers = values[0];
-
-  return values
-    .slice(1)
+  return values.slice(1)
     .filter(function(row) {
-
-      return row.some(function(v) {
-        return v !== '' && v !== null;
-      });
-
+      return row.some(function(v) { return v !== '' && v !== null; });
     })
     .map(function(row, index) {
-
-      const obj = {
-        __row: index + 2
-      };
-
+      const obj = { __row: index + 2 };
       headers.forEach(function(h, i) {
-        obj[h] = row[i];
+        if (h) obj[h] = row[i];
       });
-
       return obj;
     });
 }
 
-function append_(sheetName, obj) {
-
-  const sheet = sh_(sheetName);
-
-  const headers = sheet
-    .getRange(
-      1,
-      1,
-      1,
-      sheet.getLastColumn()
-    )
-    .getValues()[0];
-
-  sheet.appendRow(
-    headers.map(function(h) {
-
-      return obj[h] !== undefined &&
-        obj[h] !== null
-        ? obj[h]
-        : '';
-
-    })
-  );
-
-  return obj;
-}
-
-function updateById_(
-  sheetName,
-  idField,
-  id,
-  data
-) {
-
-  const row = rows_(sheetName).find(function(x) {
-
-    return String(x[idField]) ===
-      String(id);
-
-  });
-
-  if (!row) {
-    throw new Error(
-      'Data tidak ditemukan.'
-    );
+function ensureObjectHeaders_(sheet, obj) {
+  let lastCol = sheet.getLastColumn();
+  if (lastCol < 1) {
+    sheet.getRange(1, 1).setValue('ID');
+    lastCol = 1;
   }
 
-  const sheet = sh_(sheetName);
+  const range = sheet.getRange(1, 1, 1, lastCol);
+  const rawHeaders = range.getValues()[0];
+  const headers = rawHeaders.map(normalizeHeader_);
+  let changed = false;
 
-  const headers = sheet
-    .getRange(
-      1,
-      1,
-      1,
-      sheet.getLastColumn()
-    )
-    .getValues()[0];
-
-  headers.forEach(function(h, i) {
-
-    if (
-      Object.prototype
-        .hasOwnProperty
-        .call(data, h)
-    ) {
-
-      sheet
-        .getRange(
-          row.__row,
-          i + 1
-        )
-        .setValue(data[h]);
+  rawHeaders.forEach(function(h, i) {
+    const normalized = normalizeHeader_(h);
+    if (normalized !== h) {
+      sheet.getRange(1, i + 1).setValue(normalized);
+      changed = true;
     }
   });
 
-  return true;
-}
-
-function deleteById_(
-  sheetName,
-  idField,
-  id
-) {
-
-  const row = rows_(sheetName).find(function(x) {
-
-    return String(x[idField]) ===
-      String(id);
-
+  Object.keys(obj || {}).forEach(function(key) {
+    if (key === '__row') return;
+    if (!headers.includes(key)) {
+      lastCol++;
+      sheet.getRange(1, lastCol).setValue(key);
+      headers.push(key);
+      changed = true;
+    }
   });
 
-  if (!row) {
-    throw new Error(
-      'Data tidak ditemukan.'
-    );
+  if (changed) SpreadsheetApp.flush();
+  return headers;
+}
+
+function append_(sheetName, obj) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = sh_(sheetName);
+    const headers = ensureObjectHeaders_(sheet, obj);
+    const idField = headers[0];
+    const expectedId = obj[idField];
+    if (expectedId === undefined || expectedId === null || String(expectedId) === '') {
+      throw new Error('Kolom ID utama tidak valid pada sheet ' + sheetName + '.');
+    }
+
+    const rowValues = headers.map(function(h) {
+      return obj[h] !== undefined && obj[h] !== null ? obj[h] : '';
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([rowValues]);
+    SpreadsheetApp.flush();
+
+    const persisted = rows_(sheetName).find(function(x) {
+      return String(x[idField]) === String(expectedId);
+    });
+    if (!persisted) {
+      throw new Error('Data gagal diverifikasi setelah disimpan ke sheet ' + sheetName + '.');
+    }
+    return persisted;
+  } finally {
+    lock.releaseLock();
   }
+}
 
-  sh_(sheetName)
-    .deleteRow(row.__row);
+function updateById_(sheetName, idField, id, data) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const row = rows_(sheetName).find(function(x) {
+      return String(x[idField]) === String(id);
+    });
+    if (!row) throw new Error('Data tidak ditemukan.');
 
-  return true;
+    const sheet = sh_(sheetName);
+    const headers = ensureObjectHeaders_(sheet, data);
+    headers.forEach(function(h, i) {
+      if (Object.prototype.hasOwnProperty.call(data, h)) {
+        sheet.getRange(row.__row, i + 1).setValue(data[h]);
+      }
+    });
+    SpreadsheetApp.flush();
+
+    const persisted = rows_(sheetName).find(function(x) {
+      return String(x[idField]) === String(id);
+    });
+    if (!persisted) throw new Error('Data hilang saat verifikasi setelah diperbarui.');
+
+    Object.keys(data).forEach(function(key) {
+      if (key === '__row') return;
+      if (String(persisted[key] == null ? '' : persisted[key]) !== String(data[key] == null ? '' : data[key])) {
+        throw new Error('Data gagal diverifikasi pada kolom ' + key + '.');
+      }
+    });
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteById_(sheetName, idField, id) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const row = rows_(sheetName).find(function(x) {
+      return String(x[idField]) === String(id);
+    });
+    if (!row) throw new Error('Data tidak ditemukan.');
+
+    sh_(sheetName).deleteRow(row.__row);
+    SpreadsheetApp.flush();
+
+    const stillThere = rows_(sheetName).some(function(x) {
+      return String(x[idField]) === String(id);
+    });
+    if (stillThere) throw new Error('Data gagal dihapus.');
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function safeNumber_(v, fallback) {
