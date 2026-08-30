@@ -4,6 +4,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -28,6 +29,9 @@ class MainActivity : AppCompatActivity() {
     private var examQuestionIndex = 0
     private var examSubmitting = false
     private var examActive = false
+    private var examTimer: CountDownTimer? = null
+    private var examRemainingMillis = 0L
+    private var examTimerText: TextView? = null
 
     private val navy = Color.parseColor("#14213D")
     private val blue = Color.parseColor("#2563EB")
@@ -50,6 +54,13 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showLogin()
+    }
+
+    override fun onDestroy() {
+        examTimer?.cancel()
+        examTimer = null
+        examTimerText = null
+        super.onDestroy()
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -361,6 +372,9 @@ class MainActivity : AppCompatActivity() {
                     examAnswers.clear()
                     examQuestionIndex = 0
                     examSubmitting = false
+                    startExamTimer(exam)
+                } else if (examRemainingMillis <= 0L) {
+                    startExamTimer(exam)
                 }
 
                 examActive = true
@@ -369,6 +383,48 @@ class MainActivity : AppCompatActivity() {
                 toast(e.message ?: "Gagal memuat ujian")
             }
         }
+    }
+
+    private fun startExamTimer(exam: JSONObject) {
+        examTimer?.cancel()
+
+        val minutes = exam.optString("duration").trim().toLongOrNull() ?: 0L
+        if (minutes <= 0L) {
+            examRemainingMillis = 0L
+            return
+        }
+
+        examRemainingMillis = minutes * 60_000L
+        updateExamTimerText()
+
+        examTimer = object : CountDownTimer(examRemainingMillis, 1_000L) {
+            override fun onTick(millisUntilFinished: Long) {
+                examRemainingMillis = millisUntilFinished
+                updateExamTimerText()
+            }
+
+            override fun onFinish() {
+                examRemainingMillis = 0L
+                updateExamTimerText()
+                if (examActive && !examSubmitting) {
+                    toast("Waktu ujian habis. Jawaban akan dikirim otomatis.")
+                    submitExam(autoSubmit = true)
+                }
+            }
+        }.start()
+    }
+
+    private fun updateExamTimerText() {
+        val totalSeconds = (examRemainingMillis / 1_000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3600L
+        val minutes = (totalSeconds % 3600L) / 60L
+        val seconds = totalSeconds % 60L
+        val text = if (hours > 0L) {
+            String.format(java.util.Locale.getDefault(), "Sisa waktu %02d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format(java.util.Locale.getDefault(), "Sisa waktu %02d:%02d", minutes, seconds)
+        }
+        examTimerText?.text = text
     }
 
     private fun renderExamQuestion() {
@@ -383,6 +439,17 @@ class MainActivity : AppCompatActivity() {
             exam.optString("title"),
             "Soal ${index + 1} dari ${examQuestions.length()}"
         ))
+
+        examTimerText = TextView(this).apply {
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(blue)
+            background = shape(blueSoft, 14)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        box.addView(examTimerText, lp(top = 14))
+        updateExamTimerText()
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -463,7 +530,7 @@ class MainActivity : AppCompatActivity() {
         setScreen(scroll, box)
     }
 
-    private fun submitExam() {
+    private fun submitExam(autoSubmit: Boolean = false) {
         if (examSubmitting) return
         val exam = activeExam ?: return
         examSubmitting = true
@@ -496,6 +563,10 @@ class MainActivity : AppCompatActivity() {
                     "answers" to answersJson.toString()
                 ))
                 if (res.optBoolean("ok")) {
+                    examTimer?.cancel()
+                    examTimer = null
+                    examTimerText = null
+                    examRemainingMillis = 0L
                     examActive = false
                     activeExam = null
                     examQuestions = JSONArray()
