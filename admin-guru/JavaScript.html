@@ -115,12 +115,20 @@ function formatDateInput(v){if(!v)return '';const d=new Date(v);if(!isNaN(d.getT
 function formatTimeInput(v){if(!v)return '';const s=String(v);const m=s.match(/(\d{1,2}):(\d{2})/);return m?m[1].padStart(2,'0')+':'+m[2]:s.slice(0,5)}
 function formatDateTime(v){if(!v)return '-';const d=new Date(v);return isNaN(d.getTime())?String(v):d.toLocaleString('id-ID')}
 
+function tokenFromHash_() {
+  try { const m = String(window.location.hash || '').replace(/^#/, '').match(/(?:^|&)ugas_token=([^&]+)/); return m ? decodeURIComponent(m[1]) : ''; }
+  catch (_) { return ''; }
+}
+function clearTokenHash_() {
+  try { if (window.location.hash) history.replaceState(null, document.title, window.location.pathname + window.location.search); }
+  catch (_) { try { window.location.hash = ''; } catch (__) {} }
+}
 async function restoreAdminSession_() {
-  TOKEN = localStorage.getItem('ugas_token') || '';
-  try { ADMIN = JSON.parse(localStorage.getItem('ugas_admin') || 'null'); } catch (_) { ADMIN = null; }
-  if (!TOKEN || !ADMIN) { showLogin(); return; }
+  TOKEN = tokenFromHash_() || localStorage.getItem('ugas_token') || sessionStorage.getItem('ugas_token') || '';
+  try { ADMIN = JSON.parse(localStorage.getItem('ugas_admin') || sessionStorage.getItem('ugas_admin') || 'null'); } catch (_) { ADMIN = null; }
+  if (!TOKEN) { showLogin(); return; }
   try { await call('getDashboard', TOKEN); showApp(); page('dashboard'); }
-  catch (e) { TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin('Sesi tidak valid atau sudah berakhir. Silakan login kembali.'); }
+  catch (e) { TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); clearTokenHash_(); showLogin('Sesi tidak valid atau sudah berakhir. Silakan login kembali.'); }
 }
 restoreAdminSession_();
 </script>

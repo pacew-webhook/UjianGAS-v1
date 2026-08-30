@@ -140,14 +140,38 @@ function showApp() { finishBoot(); $('loginView').hidden = true; $('loginView').
 
 // Pulihkan session SEBELUM memilih tampilan Login/Dashboard.
 // Selama proses ini bootView tetap terlihat sehingga halaman Login tidak berkedip.
+function tokenFromHash_() {
+  try {
+    const raw = String(window.location.hash || '').replace(/^#/, '');
+    const m = raw.match(/(?:^|&)ugas_token=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  } catch (_) { return ''; }
+}
+
+function clearTokenHash_() {
+  try {
+    if (window.location.hash) history.replaceState(null, document.title, window.location.pathname + window.location.search);
+  } catch (_) {
+    try { window.location.hash = ''; } catch (__) {}
+  }
+}
+
+function persistClientSession_() {
+  try {
+    if (TOKEN) localStorage.setItem('ugas_token', TOKEN);
+    if (ADMIN) localStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+  } catch (_) {}
+}
+
 async function restoreAdminSession_() {
-  // Apps Script HtmlService dapat membuat iframe baru saat refresh.
-  // Pulihkan dari localStorage terlebih dahulu, lalu fallback ke sessionStorage.
-  TOKEN = localStorage.getItem('ugas_token') || sessionStorage.getItem('ugas_token') || '';
+  // PENTING: token juga disimpan di URL fragment. Fragment tetap ikut saat
+  // halaman di-refresh, sehingga pemulihan tidak bergantung hanya pada
+  // localStorage/sessionStorage yang dapat berubah pada iframe HtmlService.
+  TOKEN = tokenFromHash_() || localStorage.getItem('ugas_token') || sessionStorage.getItem('ugas_token') || '';
   const savedAdmin = localStorage.getItem('ugas_admin') || sessionStorage.getItem('ugas_admin') || '';
   try { ADMIN = JSON.parse(savedAdmin || 'null'); } catch (_) { ADMIN = null; }
 
-  // Jangan pernah menampilkan form login selama proses pemulihan berlangsung.
+  // Selama boot, Login dan Dashboard sama-sama disembunyikan.
   if ($('loginView')) $('loginView').style.display = 'none';
   if ($('appView')) $('appView').style.display = 'none';
   if ($('bootView')) $('bootView').hidden = false;
@@ -160,9 +184,7 @@ async function restoreAdminSession_() {
   try {
     const d = await call('getDashboard', TOKEN);
     if (!d || d.ok === false) throw new Error('Sesi tidak valid. Silakan login kembali.');
-    // Sinkronkan kembali kedua storage setelah session terbukti valid.
-    sessionStorage.setItem('ugas_token', TOKEN);
-    if (ADMIN) sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+    persistClientSession_();
     showApp();
     page('dashboard');
   } catch (e) {
@@ -171,6 +193,7 @@ async function restoreAdminSession_() {
     localStorage.removeItem('ugas_admin');
     sessionStorage.removeItem('ugas_token');
     sessionStorage.removeItem('ugas_admin');
+    clearTokenHash_();
     showLogin('Sesi tidak valid atau sudah berakhir. Silakan login kembali.');
   }
 }
@@ -188,10 +211,9 @@ $('loginForm').addEventListener('submit', async e => {
     const r = await call('loginAdmin', f.get('email'), f.get('password'));
     if (!r?.token) throw new Error('Login gagal.');
     TOKEN = r.token; ADMIN = r.admin;
-    localStorage.setItem('ugas_token', TOKEN);
-    localStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
-    sessionStorage.setItem('ugas_token', TOKEN);
-    sessionStorage.setItem('ugas_admin', JSON.stringify(ADMIN));
+    persistClientSession_();
+    // URL fragment dipakai sebagai fallback yang tahan refresh pada HtmlService.
+    history.replaceState(null, document.title, window.location.pathname + window.location.search + '#ugas_token=' + encodeURIComponent(TOKEN));
     showApp(); page('dashboard');
   } catch (e) { $('loginMsg').textContent = msg(e); }
   finally { busy(false); }
@@ -199,7 +221,7 @@ $('loginForm').addEventListener('submit', async e => {
 
 async function logout() {
   try { await call('logoutAdmin', TOKEN); } catch(e) {}
-  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); showLogin();
+  TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); clearTokenHash_(); showLogin();
 }
 
 function page(id) {
@@ -216,7 +238,7 @@ async function dashboard() {
     const d = await call('getDashboard', TOKEN);
     $('studentsCount').textContent=d.students||0; $('examsCount').textContent=d.exams||0; $('questionsCount').textContent=d.questions||0; $('resultsCount').textContent=d.results||0;
     $('activeStudents').textContent=(d.activeStudents||0)+' aktif'; $('publishedExams').textContent=(d.publishedExams||0)+' published';
-  } catch(e) { if(/Sesi/.test(msg(e))) { localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); showLogin(msg(e)); } }
+  } catch(e) { if(/Sesi/.test(msg(e))) { TOKEN=''; ADMIN=null; localStorage.removeItem('ugas_token'); localStorage.removeItem('ugas_admin'); sessionStorage.removeItem('ugas_token'); sessionStorage.removeItem('ugas_admin'); clearTokenHash_(); showLogin(msg(e)); } }
 }
 
 /* STUDENTS */
