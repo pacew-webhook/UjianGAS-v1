@@ -17,7 +17,7 @@
  * 2) Jangan mengganti URL Web App. Updater hanya memperbarui isi project.
  */
 
-const TARGET_SCRIPT_ID = '1ofOxPMhU-LXJHfC-Rd5CF5lrTJrKd7DdPS5pKPnjZ3VMqVS6op1KsqpB';
+const TARGET_SCRIPT_ID = 'ISI_SCRIPT_ID_ADMIN_GURU_DI_SINI';
 
 const GITHUB_BASE =
   'https://raw.githubusercontent.com/pacew-webhook/UjianGAS-v1/main/admin-guru/';
@@ -207,4 +207,13 @@ function testUpdaterV2() {
   });
 
   Logger.log('TEST OK - belum ada perubahan pada Admin Guru.');
+}
+
+/**
+ * Alias utama untuk menjalankan sinkronisasi seluruh file Admin Guru.
+ * Tidak membuat mekanisme update baru; menggunakan updateCodebaru()
+ * yang sudah teruji membaca 4 file dari GitHub.
+ */
+function updateAdminGuru() {
+  return updateCodebaru();
 }
