@@ -530,6 +530,28 @@ function rows_(sheetName) {
     });
 }
 
+function appendMany_(sheetName, objects) {
+  if (!objects || !objects.length) return [];
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = sh_(sheetName);
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const values = objects.map(function(obj) {
+      return headers.map(function(h) {
+        return obj[h] !== undefined && obj[h] !== null ? obj[h] : '';
+      });
+    });
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, values.length, headers.length).setValues(values);
+    SpreadsheetApp.flush();
+    return objects;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function append_(sheetName, obj) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -2758,6 +2780,9 @@ function submitStudentExamApi_(data) {
   let totalBobot = 0;
   let bobotBenar = 0;
 
+  const answerRows = [];
+  const answerNow = now_();
+
   questions.forEach(function(q) {
 
     const questionId =
@@ -2791,39 +2816,24 @@ function submitStudentExamApi_(data) {
     ) {
 
       benar++;
-
-      bobotBenar +=
-        bobot;
+      bobotBenar += bobot;
 
     } else {
-
       salah++;
     }
 
-    /*
-     * Simpan jawaban.
-     */
-    append_('Jawaban', {
-
-      AnswerID:
-        id_('ANS'),
-
-      ExamID:
-        examId,
-
-      StudentID:
-        student.StudentID,
-
-      QuestionID:
-        questionId,
-
-      Jawaban:
-        answer,
-
-      Waktu:
-        now_()
+    answerRows.push({
+      AnswerID: id_('ANS'),
+      ExamID: examId,
+      StudentID: student.StudentID,
+      QuestionID: questionId,
+      Jawaban: answer,
+      Waktu: answerNow
     });
   });
+
+  // Tulis seluruh jawaban sekaligus, bukan appendRow + verifikasi untuk setiap soal.
+  appendMany_('Jawaban', answerRows);
 
   const nilai =
     totalBobot > 0
