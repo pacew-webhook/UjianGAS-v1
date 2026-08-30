@@ -147,86 +147,98 @@ async function loadQuestions(){try{QUESTIONS=await call('getQuestions',TOKEN,$('
 function renderQuestions(){const q=($('questionSearch')?.value||'').toLowerCase();const data=(Array.isArray(QUESTIONS)?QUESTIONS:[]).filter(x=>String(x?.Pertanyaan||'').toLowerCase().includes(q));$('questionList').innerHTML=data.length?data.map(x=>`<div class="item-card"><div class="item-top"><div><div class="meta">${esc(examName(x.ExamID))} • Bobot ${esc(x.Bobot||1)}</div><div class="question-text">${esc(x.Pertanyaan)}</div></div><span class="status published">${esc(x.JawabanBenar)}</span></div><div class="options"><div class="option ${x.JawabanBenar==='A'?'correct':''}"><b>A.</b> ${esc(x.PilihanA)}</div><div class="option ${x.JawabanBenar==='B'?'correct':''}"><b>B.</b> ${esc(x.PilihanB)}</div><div class="option ${x.JawabanBenar==='C'?'correct':''}"><b>C.</b> ${esc(x.PilihanC)}</div><div class="option ${x.JawabanBenar==='D'?'correct':''}"><b>D.</b> ${esc(x.PilihanD)}</div></div><div class="item-actions"><button class="small-btn" onclick="openQuestionModal('${esc(x.QuestionID)}')">Edit</button><button class="danger-btn" onclick="removeQuestion('${esc(x.QuestionID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada soal untuk filter ini.');}
 function openQuestionModal(id=''){const q=QUESTIONS.find(x=>String(x.QuestionID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Soal':'Tambah Soal'}</h2><form id="questionForm" class="modal-form"><label>Ujian<select name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}" ${String(q.ExamID)===String(e.ExamID)?'selected':''}>${esc(e.NamaUjian)}</option>`).join('')}</select></label><label>Pertanyaan<textarea name="Pertanyaan" required>${esc(q.Pertanyaan||'')}</textarea></label><div class="form-grid"><label>Pilihan A<input name="PilihanA" value="${esc(q.PilihanA||'')}" required></label><label>Pilihan B<input name="PilihanB" value="${esc(q.PilihanB||'')}" required></label><label>Pilihan C<input name="PilihanC" value="${esc(q.PilihanC||'')}" required></label><label>Pilihan D<input name="PilihanD" value="${esc(q.PilihanD||'')}" required></label><label>Jawaban Benar<select name="JawabanBenar"><option>A</option><option>B</option><option>C</option><option>D</option></select></label><label>Bobot<input type="number" name="Bobot" min="0.1" step="0.1" value="${esc(q.Bobot||1)}"></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);if(q.JawabanBenar)$('questionForm').JawabanBenar.value=q.JawabanBenar;$('questionForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(ev.target));if(id)await call('updateQuestion',TOKEN,id,d);else await call('addQuestion',TOKEN,d);closeModal();toast('Soal tersimpan.');await loadQuestions();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};}
 async function removeQuestion(id){if(!confirm('Hapus soal ini?'))return;try{busy(true);await call('deleteQuestion',TOKEN,id);toast('Soal dihapus.');await loadQuestions();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
-function openImportQuestionsModal(){
-  if(!Array.isArray(EXAMS)) EXAMS=[];
-  if(!EXAMS.length){toast('Belum ada ujian. Buat ujian terlebih dahulu.');return;}
-
-  openModal(`<h2 class="modal-title">Import Bank Soal Excel</h2>
-    <form id="importQuestionForm" class="modal-form">
-      <div class="import-info"><b>Format Excel (.xlsx)</b><br>
-        Header wajib: <b>Pertanyaan, PilihanA, PilihanB, PilihanC, PilihanD, JawabanBenar</b>.<br>
-        <b>Bobot</b> opsional. Jika ada sheet <b>Soal</b>, sistem akan memilihnya otomatis.
-      </div>
-      <label>Ujian tujuan<select id="importExamId" name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('')}</select></label>
-      <label>File Excel (.xlsx)<input id="questionExcelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
-      <label>Mode import<select id="questionImportMode" name="Mode">
-        <option value="APPEND">Tambah ke soal yang sudah ada</option>
-        <option value="REPLACE">Ganti semua soal untuk ujian ini</option>
-      </select></label>
-      <div id="importStatus" class="import-info" style="display:none"></div>
-      <div class="modal-actions">
-        <button type="button" class="ghost" id="importCancelBtn" onclick="closeModal()">Batal</button>
-        <button class="primary" id="importSubmitBtn" type="submit">📥 Import Soal</button>
-      </div>
-    </form>`);
-
-  const form=$('importQuestionForm');
-  if(!form)return;
-
-  form.onsubmit=async function(ev){
-    ev.preventDefault();
-    ev.stopPropagation();
-
-    const file=$('questionExcelFile')?.files?.[0];
-    const examId=$('importExamId')?.value||'';
-    const mode=$('questionImportMode')?.value||'APPEND';
-    const status=$('importStatus');
-    const submit=$('importSubmitBtn');
-
-    const setStatus=function(text,ok){
-      if(!status)return;
-      status.style.display='block';
-      status.style.background=ok?'#ecfdf5':'#fef2f2';
-      status.style.borderColor=ok?'#a7f3d0':'#fecaca';
-      status.style.color=ok?'#166534':'#991b1b';
-      status.textContent=text;
-    };
-
-    if(!file){setStatus('Pilih file Excel terlebih dahulu.',false);return;}
-    if(!/\.xlsx$/i.test(file.name)){setStatus('File harus berformat .xlsx. File .xls lama belum didukung.',false);return;}
-    if(file.size===0){setStatus('File Excel kosong.',false);return;}
-    if(file.size>10*1024*1024){setStatus('Ukuran file maksimal 10 MB.',false);return;}
-    if(!examId){setStatus('Pilih ujian tujuan terlebih dahulu.',false);return;}
-
-    try{
-      submit.disabled=true;
-      setStatus('Membaca file Excel…',true);
+async function openImportQuestionsModal(){
+  try {
+    // Dashboard dapat mengetahui jumlah ujian sebelum array EXAMS selesai dimuat.
+    // Pastikan EXAMS di browser dimuat ulang sebelum modal Import dibuka.
+    if (!Array.isArray(EXAMS) || EXAMS.length === 0) {
       busy(true);
-
-      const base64=await readFileBase64_(file);
-      if(!base64)throw new Error('Browser tidak berhasil membaca isi file Excel.');
-
-      setStatus('Mengirim Excel ke server…',true);
-      const r=await call('importQuestionsExcel',TOKEN,file.name,base64,examId,mode);
-      if(!r || r.ok!==true)throw new Error('Server tidak mengembalikan hasil import yang valid.');
-
-      setStatus('Berhasil: '+r.imported+' soal diimpor. Total soal ujian: '+r.totalForExam+'.',true);
-      toast('Import berhasil: '+r.imported+' soal.');
-
-      await loadQuestions();
-      await dashboard();
-
-      setTimeout(closeModal,500);
-    }catch(e){
-      const text=msg(e)||'Import Excel gagal.';
-      setStatus('Import gagal: '+text,false);
-      toast('Import gagal: '+text);
-      console.error('Import Excel:',e);
-    }finally{
+      const loaded = await call('getExams', TOKEN);
+      EXAMS = Array.isArray(loaded) ? loaded : [];
+      renderExams();
+      fillExamSelects();
       busy(false);
-      if(submit)submit.disabled=false;
     }
-  };
+
+    if (!Array.isArray(EXAMS) || EXAMS.length === 0) {
+      throw new Error('Daftar ujian belum tersedia. Buka menu Ujian dan pastikan ujian sudah tersimpan.');
+    }
+
+    openModal(`<h2 class="modal-title">Import Bank Soal Excel</h2>
+      <form id="importQuestionForm" class="modal-form">
+        <div class="import-info"><b>Format Excel (.xlsx)</b><br>
+          Header wajib: <b>Pertanyaan, PilihanA, PilihanB, PilihanC, PilihanD, JawabanBenar</b>.<br>
+          <b>Bobot</b> opsional. Jika ada sheet <b>Soal</b>, sistem akan memilihnya otomatis.
+        </div>
+        <label>Ujian tujuan<select id="importExamId" name="ExamID" required>${EXAMS.map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('')}</select></label>
+        <label>File Excel (.xlsx)<input id="questionExcelFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+        <label>Mode import<select id="questionImportMode" name="Mode">
+          <option value="APPEND">Tambah ke soal yang sudah ada</option>
+          <option value="REPLACE">Ganti semua soal untuk ujian ini</option>
+        </select></label>
+        <div id="importStatus" class="import-info" style="display:none"></div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" onclick="closeModal()">Batal</button>
+          <button class="primary" id="importSubmitBtn" type="submit">📥 Import Soal</button>
+        </div>
+      </form>`);
+
+    const form = $('importQuestionForm');
+    if (!form) throw new Error('Form Import Excel gagal dibuat.');
+
+    form.onsubmit = async function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      const file = $('questionExcelFile')?.files?.[0];
+      const examId = $('importExamId')?.value || '';
+      const mode = $('questionImportMode')?.value || 'APPEND';
+      const status = $('importStatus');
+      const submit = $('importSubmitBtn');
+
+      const setStatus = function(text, ok) {
+        if (!status) return;
+        status.style.display = 'block';
+        status.textContent = text;
+      };
+
+      if (!file) { setStatus('Pilih file Excel terlebih dahulu.', false); return; }
+      if (!/\.xlsx$/i.test(file.name)) { setStatus('File harus berformat .xlsx.', false); return; }
+      if (file.size === 0) { setStatus('File Excel kosong.', false); return; }
+      if (file.size > 10 * 1024 * 1024) { setStatus('Ukuran file maksimal 10 MB.', false); return; }
+      if (!examId) { setStatus('Pilih ujian tujuan terlebih dahulu.', false); return; }
+
+      try {
+        if (submit) submit.disabled = true;
+        busy(true);
+        setStatus('Membaca file Excel...', true);
+        const base64 = await readFileBase64_(file);
+        if (!base64) throw new Error('Browser tidak berhasil membaca isi file Excel.');
+
+        setStatus('Mengirim Excel ke server...', true);
+        const r = await call('importQuestionsExcel', TOKEN, file.name, base64, examId, mode);
+        if (!r || r.ok !== true) throw new Error('Server tidak mengembalikan hasil import yang valid.');
+
+        setStatus('Berhasil: ' + r.imported + ' soal diimpor.', true);
+        toast('Import berhasil: ' + r.imported + ' soal.');
+        await loadQuestions();
+        await dashboard();
+        setTimeout(closeModal, 500);
+      } catch (e) {
+        const text = msg(e) || 'Import Excel gagal.';
+        setStatus('Import gagal: ' + text, false);
+        toast('Import gagal: ' + text);
+        console.error('Import Excel:', e);
+      } finally {
+        busy(false);
+        if (submit) submit.disabled = false;
+      }
+    };
+  } catch (e) {
+    busy(false);
+    toast(msg(e));
+    console.error('Buka Import Excel:', e);
+  }
 }
 
 function readFileBase64_(file){
