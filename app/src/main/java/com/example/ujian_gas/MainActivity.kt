@@ -21,6 +21,14 @@ class MainActivity : AppCompatActivity() {
     private var currentEmail = ""
     private var currentName = ""
 
+    // State ujian dipertahankan selama sesi ujian.
+    private var activeExam: JSONObject? = null
+    private var examQuestions = JSONArray()
+    private val examAnswers = mutableMapOf<String, String>()
+    private var examQuestionIndex = 0
+    private var examSubmitting = false
+    private var examActive = false
+
     private val navy = Color.parseColor("#14213D")
     private val blue = Color.parseColor("#2563EB")
     private val blueSoft = Color.parseColor("#EFF6FF")
@@ -29,6 +37,15 @@ class MainActivity : AppCompatActivity() {
     private val muted = Color.parseColor("#64748B")
     private val border = Color.parseColor("#E2E8F0")
     private val white = Color.WHITE
+
+    @Deprecated("Use OnBackInvokedDispatcher on newer Android versions")
+    override fun onBackPressed() {
+        if (examActive) {
+            toast("Selesaikan ujian dengan tombol Sebelumnya, Berikutnya, atau Kirim Jawaban.")
+            return
+        }
+        super.onBackPressed()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -325,66 +342,171 @@ class MainActivity : AppCompatActivity() {
     private fun showExam(exam: JSONObject) {
         lifecycleScope.launch {
             try {
+                // Ambil soal sekali untuk sesi ini. Jawaban disimpan berdasarkan QuestionID.
                 val r = GasApi.post("questions", mapOf("examId" to exam.optString("id")))
                 val qs = r.optJSONArray("data") ?: JSONArray()
-                val answers = mutableMapOf<String, String>()
-                val (scroll, box) = screen()
-                box.addView(sectionTitle(exam.optString("title"), "Jawab semua pertanyaan sebelum mengirim"))
-
-                for (i in 0 until qs.length()) {
-                    val q = qs.getJSONObject(i)
-                    val card = LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        background = shape(white, 20, border)
-                        setPadding(dp(16), dp(16), dp(16), dp(16))
-                    }
-                    card.addView(TextView(this@MainActivity).apply {
-                        text = "SOAL ${i + 1}"
-                        textSize = 12f
-                        typeface = Typeface.DEFAULT_BOLD
-                        letterSpacing = 0.08f
-                        setTextColor(blue)
-                    })
-                    card.addView(TextView(this@MainActivity).apply {
-                        text = q.optString("question")
-                        textSize = 17f
-                        typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(appTextColor)
-                    }, lp(top = 7, bottom = 10))
-
-                    val group = RadioGroup(this@MainActivity)
-                    for (letter in listOf("A", "B", "C", "D")) {
-                        val rb = RadioButton(this@MainActivity).apply {
-                            text = "$letter. ${q.optString("option$letter")}" 
-                            tag = letter
-                            textSize = 15f
-                            setTextColor(appTextColor)
-                            setPadding(dp(4), dp(6), 0, dp(6))
-                        }
-                        group.addView(rb)
-                    }
-                    group.setOnCheckedChangeListener { g, checkedId ->
-                        val rb = g.findViewById<RadioButton>(checkedId)
-                        if (rb != null) answers[q.optString("id")] = rb.tag.toString()
-                    }
-                    card.addView(group)
-                    box.addView(card, lp(top = 16))
+                if (qs.length() == 0) {
+                    toast("Belum ada soal untuk ujian ini")
+                    return@launch
                 }
-                box.addView(primaryButton("Kirim Jawaban") {
-                    lifecycleScope.launch {
-                        try {
-                            val payload = JSONObject(answers as Map<*, *>).toString()
-                            val res = GasApi.post("submit", mapOf(
-                                "email" to currentEmail, "examId" to exam.optString("id"), "answers" to payload
-                            ))
-                            toast(res.optString("message", "Jawaban terkirim"))
-                            if (res.optBoolean("ok")) showHome()
-                        } catch (e: Exception) { toast(e.message ?: "Gagal mengirim") }
-                    }
-                }, lp(top = 24))
-                box.addView(secondaryButton("Kembali") { showExams() }, lp(top = 10))
-                setScreen(scroll, box)
-            } catch (e: Exception) { toast(e.message ?: "Gagal") }
+
+                activeExam = exam
+                examQuestions = qs
+                examAnswers.clear()
+                examQuestionIndex = 0
+                examSubmitting = false
+                examActive = true
+                renderExamQuestion()
+            } catch (e: Exception) {
+                toast(e.message ?: "Gagal memuat ujian")
+            }
+        }
+    }
+
+    private fun renderExamQuestion() {
+        val exam = activeExam ?: return
+        if (examQuestions.length() == 0) return
+        val index = examQuestionIndex.coerceIn(0, examQuestions.length() - 1)
+        examQuestionIndex = index
+        val q = examQuestions.getJSONObject(index)
+
+        val (scroll, box) = screen()
+        box.addView(sectionTitle(
+            exam.optString("title"),
+            "Soal ${index + 1} dari ${examQuestions.length()}"
+        ))
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = shape(white, 20, border)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        card.addView(TextView(this).apply {
+            text = "SOAL ${index + 1}"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.08f
+            setTextColor(blue)
+        })
+        card.addView(TextView(this).apply {
+            text = q.optString("question")
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(appTextColor)
+        }, lp(top = 7, bottom = 10))
+
+        val group = RadioGroup(this)
+        val questionId = q.optString("id")
+        val savedAnswer = examAnswers[questionId]
+        for (letter in listOf("A", "B", "C", "D")) {
+            val rb = RadioButton(this).apply {
+                text = "$letter. ${q.optString("option$letter")}"
+                tag = letter
+                textSize = 15f
+                setTextColor(appTextColor)
+                setPadding(dp(4), dp(6), 0, dp(6))
+                isChecked = savedAnswer == letter
+            }
+            group.addView(rb)
+        }
+        group.setOnCheckedChangeListener { g, checkedId ->
+            if (checkedId != -1) {
+                val rb = g.findViewById<RadioButton>(checkedId)
+                if (rb != null) examAnswers[questionId] = rb.tag.toString()
+            }
+        }
+        card.addView(group)
+        box.addView(card, lp(top = 16))
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        if (index > 0) {
+            nav.addView(secondaryButton("Sebelumnya") {
+                if (!examSubmitting) {
+                    examQuestionIndex--
+                    renderExamQuestion()
+                }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(6)
+            })
+        }
+
+        if (index < examQuestions.length() - 1) {
+            nav.addView(primaryButton("Berikutnya") {
+                if (!examSubmitting) {
+                    examQuestionIndex++
+                    renderExamQuestion()
+                }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = if (index > 0) dp(6) else 0
+            })
+        } else {
+            nav.addView(primaryButton("Kirim Jawaban") {
+                submitExam()
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = if (index > 0) dp(6) else 0
+            })
+        }
+        box.addView(nav, lp(top = 20))
+
+        setScreen(scroll, box)
+    }
+
+    private fun submitExam() {
+        if (examSubmitting) return
+        val exam = activeExam ?: return
+        examSubmitting = true
+
+        // Tampilkan layar proses sehingga tombol tidak bisa ditekan berulang.
+        val (scroll, box) = screen()
+        box.gravity = Gravity.CENTER
+        box.addView(TextView(this).apply {
+            text = "Mengirim jawaban..."
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(appTextColor)
+        })
+        box.addView(TextView(this).apply {
+            text = "Mohon tunggu sampai hasil pengiriman diterima."
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(muted)
+        }, lp(top = 8))
+        setScreen(scroll, box)
+
+        lifecycleScope.launch {
+            try {
+                val answersJson = JSONObject()
+                examAnswers.forEach { (questionId, answer) -> answersJson.put(questionId, answer) }
+                val res = GasApi.post("submit", mapOf(
+                    "email" to currentEmail,
+                    "examId" to exam.optString("id"),
+                    "answers" to answersJson.toString()
+                ))
+                if (res.optBoolean("ok")) {
+                    examActive = false
+                    activeExam = null
+                    examQuestions = JSONArray()
+                    examAnswers.clear()
+                    examQuestionIndex = 0
+                    examSubmitting = false
+                    toast(res.optString("message", "Jawaban berhasil dikirim"))
+                    showHome()
+                } else {
+                    examSubmitting = false
+                    toast(res.optString("message", "Gagal mengirim jawaban"))
+                    renderExamQuestion()
+                }
+            } catch (e: Exception) {
+                examSubmitting = false
+                toast(e.message ?: "Gagal mengirim jawaban")
+                // Jawaban tetap berada di examAnswers agar siswa tidak mengulang.
+                renderExamQuestion()
+            }
         }
     }
 

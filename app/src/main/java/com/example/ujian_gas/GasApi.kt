@@ -16,7 +16,12 @@ object GasApi {
     private const val GAS_WEB_APP_URL =
         "https://script.google.com/macros/s/AKfycbwZSv8kIzzKo9q0krkNruTkeF4r3mPd0bWek2CVd5kCPM1LU5JgfVhYmsCYh7rNfuyK/exec"
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(75, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     /**
      * Mengirim request POST ke Google Apps Script.
