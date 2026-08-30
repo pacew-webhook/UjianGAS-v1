@@ -2612,212 +2612,61 @@ function getStudentQuestionsApi_(data) {
 
 function submitStudentExamApi_(data) {
 
-  const email =
-    String(data.email || '')
-      .trim()
-      .toLowerCase();
+  const email = String(data.email || '').trim().toLowerCase();
+  const examId = String(data.examId || '').trim();
+  const answersRaw = data.answers;
 
-  const examId =
-    String(data.examId || '')
-      .trim();
+  const student = findStudentByEmail_(email);
+  if (!student) return { ok: false, message: 'Siswa tidak ditemukan.' };
+  if (!examId) return { ok: false, message: 'ExamID wajib diisi.' };
 
-  const answersRaw =
-    data.answers;
-
-  const student =
-    findStudentByEmail_(email);
-
-  if (!student) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Siswa tidak ditemukan.'
-    };
+  const exam = rows_('Ujian').find(function(e) {
+    return String(e.ExamID) === examId;
+  });
+  if (!exam) return { ok: false, message: 'Ujian tidak ditemukan.' };
+  if (String(exam.Status || '').toUpperCase() !== 'PUBLISHED') {
+    return { ok: false, message: 'Ujian belum tersedia.' };
   }
 
-  if (!examId) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'ExamID wajib diisi.'
-    };
-  }
-
-  const exam =
-    rows_('Ujian').find(function(e) {
-
-      return String(e.ExamID) ===
-        examId;
-
-    });
-
-  if (!exam) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Ujian tidak ditemukan.'
-    };
-  }
-
-  if (
-    String(exam.Status || '')
-      .toUpperCase() !==
-    'PUBLISHED'
-  ) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Ujian belum tersedia.'
-    };
-  }
-
-  /*
-   * Pastikan siswa memang diundang.
-   */
-  if (
-    !studentHasExamInvitation_(
-      student.StudentID,
-      examId
-    )
-  ) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Anda tidak memiliki undangan untuk ujian ini.'
-    };
-  }
-
-  /*
-   * Jangan boleh submit dua kali.
-   */
-  if (
-    studentAlreadySubmitted_(
-      student.StudentID,
-      examId
-    )
-  ) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Ujian ini sudah pernah dikumpulkan.'
-    };
+  if (!studentHasExamInvitation_(student.StudentID, examId)) {
+    return { ok: false, message: 'Anda tidak memiliki undangan untuk ujian ini.' };
   }
 
   let answers = {};
-
   try {
-
-    if (
-      typeof answersRaw ===
-      'string'
-    ) {
-
-      answers =
-        JSON.parse(answersRaw);
-
-    } else if (
-      answersRaw &&
-      typeof answersRaw ===
-      'object'
-    ) {
-
-      answers =
-        answersRaw;
+    if (typeof answersRaw === 'string') {
+      answers = JSON.parse(answersRaw);
+    } else if (answersRaw && typeof answersRaw === 'object') {
+      answers = answersRaw;
     }
-
   } catch (err) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Format jawaban tidak valid.'
-    };
+    return { ok: false, message: 'Format jawaban tidak valid.' };
   }
 
-  const questions =
-    rows_('Soal')
-      .filter(function(q) {
-
-        return String(q.ExamID) ===
-          examId;
-
-      });
-
+  const questions = rows_('Soal').filter(function(q) {
+    return String(q.ExamID) === examId;
+  });
   if (!questions.length) {
-
-    return {
-
-      ok: false,
-
-      message:
-        'Belum ada soal untuk ujian ini.'
-    };
+    return { ok: false, message: 'Belum ada soal untuk ujian ini.' };
   }
 
   let benar = 0;
   let salah = 0;
-
   let totalBobot = 0;
   let bobotBenar = 0;
-
   const answerRows = [];
   const answerNow = now_();
 
   questions.forEach(function(q) {
-
-    const questionId =
-      String(q.QuestionID);
-
-    const answer =
-      String(
-        answers[questionId] || ''
-      )
-      .trim()
-      .toUpperCase();
-
-    const correct =
-      String(
-        q.JawabanBenar || ''
-      )
-      .trim()
-      .toUpperCase();
-
-    const bobot =
-      safeNumber_(
-        q.Bobot,
-        1
-      ) || 1;
+    const questionId = String(q.QuestionID);
+    const answer = String(answers[questionId] || '').trim().toUpperCase();
+    const correct = String(q.JawabanBenar || '').trim().toUpperCase();
+    const bobot = safeNumber_(q.Bobot, 1) || 1;
 
     totalBobot += bobot;
-
-    if (
-      answer &&
-      answer === correct
-    ) {
-
+    if (answer && answer === correct) {
       benar++;
       bobotBenar += bobot;
-
     } else {
       salah++;
     }
@@ -2832,108 +2681,117 @@ function submitStudentExamApi_(data) {
     });
   });
 
-  // Tulis seluruh jawaban sekaligus, bukan appendRow + verifikasi untuk setiap soal.
-  appendMany_('Jawaban', answerRows);
-
-  const nilai =
-    totalBobot > 0
-
-      ? Math.round(
-          (bobotBenar /
-            totalBobot) *
-          10000
-        ) / 100
-
-      : 0;
+  const nilai = totalBobot > 0
+    ? Math.round((bobotBenar / totalBobot) * 10000) / 100
+    : 0;
 
   /*
-   * Simpan nilai.
+   * Final write dibuat dalam SATU lock dan tanpa verifikasi baca ulang.
+   * Sebelumnya setiap helper melakukan flush + read-back sehingga submit
+   * dapat terlambat walaupun data akhirnya berhasil tersimpan.
    */
-  const result =
-    append_('Nilai', {
-
-      ResultID:
-        id_('RES'),
-
-      ExamID:
-        examId,
-
-      StudentID:
-        student.StudentID,
-
-      Benar:
-        benar,
-
-      Salah:
-        salah,
-
-      Nilai:
-        nilai,
-
-      Status:
-        'SELESAI',
-
-      Waktu:
-        now_()
-    });
-
-  /*
-   * Update undangan menjadi COMPLETED.
-   */
-  const invitation =
-    rows_('Undangan').find(function(i) {
-
-      return String(i.ExamID) ===
-        examId &&
-
-        String(i.StudentID) ===
-        String(student.StudentID) &&
-
-        String(i.Status || '')
-          .toUpperCase() !==
-          'CANCELLED';
-
-    });
-
-  if (invitation) {
-
-    updateById_(
-      'Undangan',
-      'InviteID',
-      invitation.InviteID,
-      {
-        Status:
-          'COMPLETED'
-      }
-    );
-  }
-
-  return {
-
-    ok: true,
-
-    message:
-      'Jawaban berhasil dikirim.',
-
-    result: {
-
-      id:
-        result.ResultID,
-
-      benar:
-        benar,
-
-      salah:
-        salah,
-
-      nilai:
-        nilai,
-
-      status:
-        'SELESAI'
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    // Cek ulang setelah memperoleh lock untuk mencegah submit ganda.
+    if (studentAlreadySubmitted_(student.StudentID, examId)) {
+      return {
+        ok: false,
+        message: 'Ujian ini sudah pernah dikumpulkan.'
+      };
     }
-  };
+
+    appendManyUnlocked_('Jawaban', answerRows);
+
+    const resultObj = {
+      ResultID: id_('RES'),
+      ExamID: examId,
+      StudentID: student.StudentID,
+      Benar: benar,
+      Salah: salah,
+      Nilai: nilai,
+      Status: 'SELESAI',
+      Waktu: now_()
+    };
+    appendUnlocked_('Nilai', resultObj);
+
+    const invitation = rows_('Undangan').find(function(i) {
+      return String(i.ExamID) === examId &&
+        String(i.StudentID) === String(student.StudentID) &&
+        String(i.Status || '').toUpperCase() !== 'CANCELLED';
+    });
+
+    if (invitation) {
+      updateByIdUnlocked_('Undangan', 'InviteID', invitation.InviteID, {
+        Status: 'COMPLETED'
+      });
+    }
+
+    // Satu flush untuk seluruh proses final submit.
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true,
+      message: 'Jawaban berhasil dikirim.',
+      result: {
+        id: resultObj.ResultID,
+        benar: benar,
+        salah: salah,
+        nilai: nilai,
+        status: resultObj.Status
+      }
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
+
+function appendManyUnlocked_(sheetName, objects) {
+  if (!objects || !objects.length) return;
+  const sheet = sh_(sheetName);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const values = objects.map(function(obj) {
+    return headers.map(function(h) {
+      return obj[h] !== undefined && obj[h] !== null ? obj[h] : '';
+    });
+  });
+  const startRow = sheet.getLastRow() + 1;
+  sheet.getRange(startRow, 1, values.length, headers.length).setValues(values);
+}
+
+function appendUnlocked_(sheetName, obj) {
+  const sheet = sh_(sheetName);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const values = headers.map(function(h) {
+    return obj[h] !== undefined && obj[h] !== null ? obj[h] : '';
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, values.length).setValues([values]);
+}
+
+function updateByIdUnlocked_(sheetName, idField, id, data) {
+  const sheet = sh_(sheetName);
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) throw new Error('Data tidak ditemukan.');
+
+  const headers = values[0];
+  const idCol = headers.indexOf(idField);
+  if (idCol < 0) throw new Error('Kolom ID tidak ditemukan: ' + idField);
+
+  let rowNumber = -1;
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][idCol]) === String(id)) {
+      rowNumber = r + 1;
+      break;
+    }
+  }
+  if (rowNumber < 0) throw new Error('Data tidak ditemukan.');
+
+  Object.keys(data).forEach(function(field) {
+    const col = headers.indexOf(field);
+    if (col >= 0) sheet.getRange(rowNumber, col + 1).setValue(data[field]);
+  });
+}
+
 /* =========================
    UNDANGAN SISWA
    ========================= */
