@@ -2786,10 +2786,12 @@ function updateByIdUnlocked_(sheetName, idField, id, data) {
   }
   if (rowNumber < 0) throw new Error('Data tidak ditemukan.');
 
+  const updatedRow = values[rowNumber - 1].slice();
   Object.keys(data).forEach(function(field) {
     const col = headers.indexOf(field);
-    if (col >= 0) sheet.getRange(rowNumber, col + 1).setValue(data[field]);
+    if (col >= 0) updatedRow[col] = data[field];
   });
+  sheet.getRange(rowNumber, 1, 1, headers.length).setValues([updatedRow]);
 }
 
 /* =========================
