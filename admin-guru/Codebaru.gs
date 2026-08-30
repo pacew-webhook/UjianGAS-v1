@@ -1154,42 +1154,60 @@ function deleteQuestion(
    ADMIN - IMPORT BANK SOAL EXCEL
    ========================= */
 
+/* =========================
+   ADMIN - IMPORT BANK SOAL EXCEL
+   FIX2: parser XLSX lebih toleran + validasi header + error jelas
+   ========================= */
+
 function importQuestionsExcel(token, fileName, base64, examId, mode) {
   requireAdmin_(token);
 
-  if (!base64) throw new Error('File Excel belum dipilih.');
+  if (!base64) throw new Error('File Excel belum dipilih atau tidak berhasil dibaca browser.');
   if (!examId) throw new Error('Pilih ujian tujuan terlebih dahulu.');
 
   const examExists = rows_('Ujian').some(function(e) {
-    return String(e.ExamID) === String(examId);
+    return String(e.ExamID || '') === String(examId);
   });
-  if (!examExists) throw new Error('Ujian tujuan tidak ditemukan.');
+  if (!examExists) throw new Error('Ujian tujuan tidak ditemukan. Silakan muat ulang halaman.');
 
   const name = String(fileName || 'bank-soal.xlsx').trim();
   if (!/\.xlsx$/i.test(name)) {
-    throw new Error('Format harus .xlsx. Gunakan file Excel modern (.xlsx).');
+    throw new Error('Format file harus .xlsx. File .xls lama belum didukung.');
   }
 
-  const bytes = Utilities.base64Decode(String(base64));
+  let bytes;
+  try {
+    bytes = Utilities.base64Decode(String(base64).replace(/\s/g, ''));
+  } catch (err) {
+    throw new Error('Isi file Excel tidak dapat dibaca: ' + String(err.message || err));
+  }
+
+  if (!bytes || !bytes.length) throw new Error('File Excel kosong.');
+
   const blob = Utilities.newBlob(
     bytes,
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     name
   );
 
-  const rows = parseXlsxRows_(blob);
-  if (!rows.length) throw new Error('Sheet Excel tidak berisi data.');
+  const parsed = parseXlsxRows_(blob);
+  if (!parsed.rows.length) {
+    throw new Error('Tidak ditemukan baris data pada sheet "' + parsed.sheetName + '".');
+  }
 
-  const normalized = normalizeQuestionImportRows_(rows, examId);
-  if (!normalized.length) throw new Error('Tidak ada baris soal yang valid.');
+  const normalized = normalizeQuestionImportRows_(parsed.rows, examId);
+  if (!normalized.length) throw new Error('Tidak ada soal valid yang dapat diimpor.');
 
+  const selectedMode = String(mode || 'APPEND').toUpperCase() === 'REPLACE' ? 'REPLACE' : 'APPEND';
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
+
   try {
-    if (String(mode || 'APPEND').toUpperCase() === 'REPLACE') {
-      const sheet = sh_('Soal');
+    const sheet = sh_('Soal');
+
+    if (selectedMode === 'REPLACE') {
       const existing = rows_('Soal').filter(function(q) {
-        return String(q.ExamID) === String(examId);
+        return String(q.ExamID || '') === String(examId);
       });
       for (let i = existing.length - 1; i >= 0; i--) {
         sheet.deleteRow(existing[i].__row);
@@ -1197,26 +1215,30 @@ function importQuestionsExcel(token, fileName, base64, examId, mode) {
     }
 
     normalized.forEach(function(q) {
-      append_('Soal', q);
+      append_("Soal", q);
     });
 
     SpreadsheetApp.flush();
 
     const verify = rows_('Soal').filter(function(q) {
-      return String(q.ExamID) === String(examId);
+      return String(q.ExamID || '') === String(examId);
     });
 
     if (verify.length < normalized.length) {
-      throw new Error('Verifikasi gagal: sebagian soal tidak tersimpan.');
+      throw new Error(
+        'Verifikasi gagal. File terbaca ' + normalized.length +
+        ' soal, tetapi hanya ' + verify.length + ' soal terbaca kembali dari Sheet Soal.'
+      );
     }
 
     return {
       ok: true,
       imported: normalized.length,
       totalForExam: verify.length,
-      examId: examId,
-      mode: String(mode || 'APPEND').toUpperCase(),
-      fileName: name
+      examId: String(examId),
+      mode: selectedMode,
+      fileName: name,
+      sheetName: parsed.sheetName
     };
   } finally {
     lock.releaseLock();
@@ -1224,84 +1246,177 @@ function importQuestionsExcel(token, fileName, base64, examId, mode) {
 }
 
 function parseXlsxRows_(blob) {
-  const files = Utilities.unzip(blob);
+  let files;
+  try {
+    files = Utilities.unzip(blob);
+  } catch (err) {
+    throw new Error('File bukan XLSX yang valid atau rusak. Silakan simpan ulang sebagai .xlsx.');
+  }
+
   const map = {};
-  files.forEach(function(f) { map[f.getName()] = f; });
+  files.forEach(function(f) {
+    map[normalizeZipPath_(f.getName())] = f;
+  });
 
   const workbookBlob = map['xl/workbook.xml'];
-  if (!workbookBlob) throw new Error('File Excel tidak valid: workbook.xml tidak ditemukan.');
+  if (!workbookBlob) throw new Error('File Excel tidak valid: xl/workbook.xml tidak ditemukan.');
 
   const ns = XmlService.getNamespace('http://schemas.openxmlformats.org/spreadsheetml/2006/main');
   const relNs = XmlService.getNamespace('http://schemas.openxmlformats.org/officeDocument/2006/relationships');
-  const workbook = XmlService.parse(workbookBlob.getDataAsString()).getRootElement();
+
+  let workbook;
+  try {
+    workbook = XmlService.parse(workbookBlob.getDataAsString()).getRootElement();
+  } catch (err) {
+    throw new Error('Workbook Excel tidak dapat dibaca: ' + String(err.message || err));
+  }
+
   const sheetsNode = workbook.getChild('sheets', ns);
   if (!sheetsNode) throw new Error('Excel tidak memiliki sheet.');
 
-  const relBlob = map['xl/_rels/workbook.xml.rels'];
   const relMap = {};
+  const relBlob = map['xl/_rels/workbook.xml.rels'];
   if (relBlob) {
     const relRoot = XmlService.parse(relBlob.getDataAsString()).getRootElement();
     relRoot.getChildren().forEach(function(r) {
-      relMap[r.getAttribute('Id').getValue()] = r.getAttribute('Target').getValue().replace(/^\//, '');
-    });
-  }
-
-  let selected = null;
-  sheetsNode.getChildren('sheet', ns).forEach(function(sheet) {
-    const name = sheet.getAttribute('name').getValue();
-    const rid = sheet.getAttribute('id', relNs);
-    const rawTarget = rid && relMap[rid.getValue()];
-    const target = rawTarget ? (rawTarget.indexOf('xl/') === 0 ? rawTarget : 'xl/' + rawTarget.replace(/^\//, '')) : null;
-    if (!target) return;
-    if (!selected || name.toLowerCase() === 'soal') {
-      selected = { name: name, path: target };
-    }
-  });
-  if (!selected) throw new Error('Sheet Excel tidak ditemukan.');
-
-  const sheetBlob = map[selected.path] || map['xl/' + selected.path.replace(/^xl\//, '')];
-  if (!sheetBlob) throw new Error('Isi sheet Excel tidak ditemukan: ' + selected.name);
-
-  const shared = [];
-  if (map['xl/sharedStrings.xml']) {
-    const ssRoot = XmlService.parse(map['xl/sharedStrings.xml'].getDataAsString()).getRootElement();
-    const ssNs = ns;
-    ssRoot.getChildren('si', ssNs).forEach(function(si) {
-      shared.push(xmlText_(si, ssNs));
-    });
-  }
-
-  const sheetRoot = XmlService.parse(sheetBlob.getDataAsString()).getRootElement();
-  const sheetData = sheetRoot.getChild('sheetData', ns);
-  if (!sheetData) return [];
-
-  return sheetData.getChildren('row', ns).map(function(row) {
-    const cells = {};
-    row.getChildren('c', ns).forEach(function(c) {
-      const refAttr = c.getAttribute('r');
-      if (!refAttr) return;
-      const ref = refAttr.getValue();
-      const col = ref.replace(/\d+/g, '').toUpperCase();
-      const typeAttr = c.getAttribute('t');
-      const type = typeAttr ? typeAttr.getValue() : '';
-      const v = c.getChild('v', ns);
-      const inline = c.getChild('is', ns);
-      let value = '';
-
-      if (type === 's' && v) {
-        const idx = Number(v.getText());
-        value = shared[idx] == null ? '' : shared[idx];
-      } else if (type === 'inlineStr' && inline) {
-        value = xmlText_(inline, ns);
-      } else if (v) {
-        value = v.getText();
-      } else if (inline) {
-        value = xmlText_(inline, ns);
+      const idAttr = r.getAttribute('Id');
+      const targetAttr = r.getAttribute('Target');
+      if (idAttr && targetAttr) {
+        relMap[idAttr.getValue()] = targetAttr.getValue();
       }
-      cells[col] = value;
     });
-    return cells;
+  }
+
+  const candidates = [];
+  sheetsNode.getChildren('sheet', ns).forEach(function(sheet) {
+    const nameAttr = sheet.getAttribute('name');
+    const ridAttr = sheet.getAttribute('id', relNs);
+    if (!nameAttr || !ridAttr) return;
+    const target = relMap[ridAttr.getValue()];
+    if (!target) return;
+    candidates.push({
+      name: nameAttr.getValue(),
+      path: resolveXlsxTarget_('xl/workbook.xml', target)
+    });
   });
+
+  if (!candidates.length) throw new Error('Sheet Excel tidak dapat ditemukan.');
+
+  // Prioritas: sheet bernama Soal, lalu sheet yang pertama kali memiliki header soal.
+  let selected = candidates.find(function(x) { return x.name.trim().toLowerCase() === 'soal'; }) || null;
+
+  const shared = parseSharedStrings_(map, ns);
+
+  function readSheet(candidate) {
+    const sheetBlob = map[normalizeZipPath_(candidate.path)];
+    if (!sheetBlob) return null;
+    let root;
+    try {
+      root = XmlService.parse(sheetBlob.getDataAsString()).getRootElement();
+    } catch (err) {
+      throw new Error('Sheet "' + candidate.name + '" tidak dapat dibaca: ' + String(err.message || err));
+    }
+    const sheetData = root.getChild('sheetData', ns);
+    if (!sheetData) return [];
+    return sheetData.getChildren('row', ns).map(function(row) {
+      const cells = {};
+      row.getChildren('c', ns).forEach(function(c) {
+        const refAttr = c.getAttribute('r');
+        if (!refAttr) return;
+        const ref = refAttr.getValue();
+        const col = ref.replace(/\d+/g, '').toUpperCase();
+        const typeAttr = c.getAttribute('t');
+        const type = typeAttr ? typeAttr.getValue() : '';
+        const v = c.getChild('v', ns);
+        const inline = c.getChild('is', ns);
+        let value = '';
+
+        if (type === 's' && v) {
+          const idx = Number(v.getText());
+          value = shared[idx] == null ? '' : shared[idx];
+        } else if (type === 'inlineStr' && inline) {
+          value = xmlText_(inline, ns);
+        } else if ((type === 'str' || type === 'd') && v) {
+          value = v.getText();
+        } else if (v) {
+          value = v.getText();
+        } else if (inline) {
+          value = xmlText_(inline, ns);
+        }
+        cells[col] = value;
+      });
+      return cells;
+    });
+  }
+
+  let rows = selected ? readSheet(selected) : null;
+
+  if (!selected || !hasQuestionHeaderRow_(rows)) {
+    for (let i = 0; i < candidates.length; i++) {
+      const candidateRows = readSheet(candidates[i]);
+      if (hasQuestionHeaderRow_(candidateRows)) {
+        selected = candidates[i];
+        rows = candidateRows;
+        break;
+      }
+    }
+  }
+
+  if (!selected || !rows) throw new Error('Tidak ditemukan sheet Excel yang berisi header bank soal.');
+  return { sheetName: selected.name, rows: rows };
+}
+
+function parseSharedStrings_(map, ns) {
+  const shared = [];
+  const blob = map['xl/sharedStrings.xml'];
+  if (!blob) return shared;
+  try {
+    const root = XmlService.parse(blob.getDataAsString()).getRootElement();
+    root.getChildren('si', ns).forEach(function(si) {
+      shared.push(xmlText_(si, ns));
+    });
+  } catch (err) {
+    throw new Error('sharedStrings Excel tidak dapat dibaca: ' + String(err.message || err));
+  }
+  return shared;
+}
+
+function normalizeZipPath_(path) {
+  const parts = String(path || '').replace(/\\/g, '/').split('/');
+  const out = [];
+  parts.forEach(function(part) {
+    if (!part || part === '.') return;
+    if (part === '..') out.pop();
+    else out.push(part);
+  });
+  return out.join('/');
+}
+
+function resolveXlsxTarget_(baseFile, target) {
+  const t = String(target || '').replace(/\\/g, '/');
+  if (/^https?:\/\//i.test(t)) return t;
+  if (t.charAt(0) === '/') return normalizeZipPath_(t.slice(1));
+  const baseParts = String(baseFile).split('/');
+  baseParts.pop();
+  return normalizeZipPath_(baseParts.concat(t.split('/')).join('/'));
+}
+
+function hasQuestionHeaderRow_(rows) {
+  if (!rows || !rows.length) return false;
+  const limit = Math.min(rows.length, 20);
+  for (let i = 0; i < limit; i++) {
+    const keys = Object.keys(rows[i]);
+    const values = keys.map(function(k) {
+      return String(rows[i][k] || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    });
+    const set = {};
+    values.forEach(function(v) { if (v) set[v] = true; });
+    if ((set.pertanyaan || set.soal || set.question || set.questiontext) &&
+        (set.pilihana || set.optiona || set.answera || set.a)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function xmlText_(element, ns) {
@@ -1317,10 +1432,39 @@ function xmlText_(element, ns) {
 function normalizeQuestionImportRows_(rows, examId) {
   if (!rows.length) return [];
 
-  const headers = rows[0];
+  // Temukan header dalam 20 baris pertama, sehingga file boleh memiliki judul/informasi di atas tabel.
+  let headerIndex = -1;
+  let headers = null;
+  const maxHeaderScan = Math.min(rows.length, 20);
+
+  for (let i = 0; i < maxHeaderScan; i++) {
+    const candidate = rows[i];
+    const keys = Object.keys(candidate);
+    const normalizedValues = keys.map(function(k) {
+      return String(candidate[k] || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    });
+    const hasQuestion = normalizedValues.some(function(v) {
+      return ['pertanyaan','soal','question','questiontext'].indexOf(v) >= 0;
+    });
+    const hasA = normalizedValues.some(function(v) {
+      return ['pilihana','a','optiona','answera'].indexOf(v) >= 0;
+    });
+    if (hasQuestion && hasA) {
+      headerIndex = i;
+      headers = candidate;
+      break;
+    }
+  }
+
+  if (headerIndex < 0) {
+    throw new Error('Header bank soal tidak ditemukan. Wajib ada: Pertanyaan, PilihanA, PilihanB, PilihanC, PilihanD, JawabanBenar.');
+  }
+
   const headerKeys = Object.keys(headers);
   const getHeader = function(aliases) {
-    const wanted = aliases.map(function(x) { return String(x).toLowerCase().replace(/[^a-z0-9]/g, ''); });
+    const wanted = aliases.map(function(x) {
+      return String(x).toLowerCase().replace(/[^a-z0-9]/g, '');
+    });
     for (let i = 0; i < headerKeys.length; i++) {
       const k = headerKeys[i];
       const normalized = String(headers[k] || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1344,7 +1488,8 @@ function normalizeQuestionImportRows_(rows, examId) {
   }
 
   const result = [];
-  rows.slice(1).forEach(function(row, index) {
+  rows.slice(headerIndex + 1).forEach(function(row, index) {
+    const excelRow = headerIndex + index + 2;
     const question = String(row[columns.question] || '').trim();
     const a = String(row[columns.a] || '').trim();
     const b = String(row[columns.b] || '').trim();
@@ -1355,10 +1500,10 @@ function normalizeQuestionImportRows_(rows, examId) {
     if (!question && !a && !b && !c && !d && !answer) return;
 
     if (!question || !a || !b || !c || !d) {
-      throw new Error('Baris Excel ' + (index + 2) + ' tidak lengkap.');
+      throw new Error('Baris Excel ' + excelRow + ' tidak lengkap.');
     }
     if (['A','B','C','D'].indexOf(answer) < 0) {
-      throw new Error('Baris Excel ' + (index + 2) + ': JawabanBenar harus A, B, C, atau D.');
+      throw new Error('Baris Excel ' + excelRow + ': JawabanBenar harus A, B, C, atau D.');
     }
 
     result.push({
