@@ -46,3 +46,7 @@ Jika browser masih menampilkan `<?!= include('Style'); ?>`, berarti URL yang dib
 
 ## Catatan integrasi aplikasi siswa
 Folder `gas/` pada ZIP asli memakai struktur database yang berbeda (`Users`, `Exams`, `Questions`, dst.), sedangkan admin panel ini mempertahankan struktur database admin asli (`Admin`, `Siswa`, `Ujian`, `Soal`, dst.). Jadi jika admin panel ini akan dipakai bersama aplikasi Android dari ZIP asli, backend siswa perlu diselaraskan ke struktur sheet yang sama sebelum dipakai produksi.
+
+
+## Import Bank Soal Excel
+Admin Guru sekarang menyediakan Import Excel `.xlsx` pada menu Bank Soal. Kolom wajib: `Pertanyaan`, `PilihanA`, `PilihanB`, `PilihanC`, `PilihanD`, `JawabanBenar`; `Bobot` opsional. Sistem membaca sheet `Soal` jika tersedia, lalu menyimpan soal ke spreadsheet backend.
