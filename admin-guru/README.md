@@ -121,3 +121,23 @@ Android
 ```
 
 Dengan struktur ini tidak ada lagi dua backend GAS yang berbeda di source utama.
+
+
+## Konfigurasi sekali di Apps Script
+
+Untuk backend `Code.gs`, simpan `SHEET_ID` di Project Settings > Script properties.
+Jangan menaruh Spreadsheet ID di source GitHub.
+
+Untuk updater, simpan:
+- `TARGET_SCRIPT_ID`
+- `GITHUB_BASE`
+
+`Updater.gs` mengambil source terbaru dari GitHub sehingga `Code.gs` yang panjang tidak
+perlu dipaste manual setiap kali ada revisi.
+
+Untuk admin awal, simpan sementara:
+- `INITIAL_ADMIN_EMAIL`
+- `INITIAL_ADMIN_PASSWORD`
+
+Lalu jalankan `createInitialAdmin()`. Jika akun sudah ada, fungsi akan mengaktifkan akun
+dan mereset password. Setelah login berhasil, jalankan `clearInitialAdminCredentials()`.

@@ -1,9 +1,22 @@
-const SHEET_ID = 'ISI_GOOGLE_SHEET_ID_DI_SINI';
+function getRequiredScriptProperty_(name) {
+  const value = PropertiesService.getScriptProperties().getProperty(name);
+  if (!value || !String(value).trim()) {
+    throw new Error(
+      'Script Property ' + name + ' belum diatur. ' +
+      'Buka Project Settings > Script properties.'
+    );
+  }
+  return String(value).trim();
+}
+
+function getSheetId_() {
+  return getRequiredScriptProperty_('SHEET_ID');
+}
 const SESSION_PREFIX = 'UGAS_ADMIN_SESSION_';
 const SESSION_SECONDS = 21600; // 6 jam
 
 function ss_() {
-  return SpreadsheetApp.openById(SHEET_ID);
+  return SpreadsheetApp.openById(getSheetId_());
 }
 
 function sh_(name) {
@@ -284,9 +297,41 @@ function createInitialAdmin() {
     );
   }
 
+  const normalized = email.toLowerCase();
+  const existing = rows_('Admin').find(function(a) {
+    return String(a.Email || '').trim().toLowerCase() === normalized;
+  });
+
+  if (existing) {
+    const sheet = sh_('Admin');
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rowNumber = existing.__row;
+
+    function setAdminField_(fieldName, value) {
+      const colIndex = headers.indexOf(fieldName);
+      if (colIndex >= 0) {
+        sheet.getRange(rowNumber, colIndex + 1).setValue(value);
+      }
+    }
+
+    setAdminField_('PasswordHash', hash_(password));
+    setAdminField_('Status', 'ACTIVE');
+    setAdminField_('Role', 'ADMIN');
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true,
+      created: false,
+      updated: true,
+      message: 'Admin sudah ada. Password berhasil di-reset dan akun diaktifkan.',
+      AdminID: existing.AdminID,
+      Email: normalized
+    };
+  }
+
   return createAdmin_(
     'Administrator',
-    email,
+    normalized,
     password,
     'ADMIN'
   );

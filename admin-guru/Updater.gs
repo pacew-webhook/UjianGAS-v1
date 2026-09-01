@@ -13,14 +13,36 @@
  * - admin-guru/Style.html -> target "Style"
  *
  * PENTING:
- * 1) Isi TARGET_SCRIPT_ID dengan Script ID project Admin Guru yang sekarang.
+ * 1) Isi Script Properties TARGET_SCRIPT_ID dan GITHUB_BASE satu kali.
  * 2) Jangan mengganti URL Web App. Updater hanya memperbarui isi project.
+ * 3) Script Properties tetap tersimpan di project dan tidak ikut ditimpa oleh GitHub.
  */
 
-const TARGET_SCRIPT_ID = '1ofOxPMhU-LXJHfC-Rd5CF5lrTJrKd7DdPS5pKPnjZ3VMqVS6op1KsqpB';
+function updaterConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const targetScriptId = String(
+    props.getProperty('TARGET_SCRIPT_ID') || ''
+  ).trim();
+  const githubBase = String(
+    props.getProperty('GITHUB_BASE') || ''
+  ).trim();
 
-const GITHUB_BASE =
-  'https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru/';
+  if (!targetScriptId) {
+    throw new Error(
+      'Script Property TARGET_SCRIPT_ID belum diatur.'
+    );
+  }
+  if (!githubBase) {
+    throw new Error(
+      'Script Property GITHUB_BASE belum diatur.'
+    );
+  }
+
+  return {
+    targetScriptId: targetScriptId,
+    githubBase: githubBase.replace(/\/$/, '')
+  };
+}
 
 // Nama file server-side pada project Admin Guru.
 // Source resmi di repository menggunakan Code.gs.
@@ -40,7 +62,8 @@ function updateBackend() {
   Logger.log('================================');
   Logger.log('UJIAN GAS UPDATER V2');
   Logger.log('================================');
-  Logger.log('Target Script ID: ' + TARGET_SCRIPT_ID);
+  const cfg = updaterConfig_();
+  Logger.log('Target Script ID: ' + cfg.targetScriptId);
 
   // 1. Ambil isi project target terlebih dahulu agar file lain tidak terhapus.
   const current = getProjectContent_();
@@ -125,7 +148,7 @@ function updateBackend() {
 function getProjectContent_() {
   const url =
     'https://script.googleapis.com/v1/projects/' +
-    encodeURIComponent(TARGET_SCRIPT_ID) +
+    encodeURIComponent(updaterConfig_().targetScriptId) +
     '/content';
 
   const response = UrlFetchApp.fetch(url, {
@@ -146,7 +169,7 @@ function getProjectContent_() {
 function updateProjectContent_(files) {
   const url =
     'https://script.googleapis.com/v1/projects/' +
-    encodeURIComponent(TARGET_SCRIPT_ID) +
+    encodeURIComponent(updaterConfig_().targetScriptId) +
     '/content';
 
   const response = UrlFetchApp.fetch(url, {
@@ -167,7 +190,7 @@ function updateProjectContent_(files) {
 }
 
 function fetchGitHub_(filename) {
-  const url = GITHUB_BASE + encodeURIComponent(filename);
+  const url = updaterConfig_().githubBase + '/' + encodeURIComponent(filename);
   const response = UrlFetchApp.fetch(url, {
     method: 'get',
     muteHttpExceptions: true,
@@ -190,8 +213,9 @@ function fetchGitHub_(filename) {
 }
 
 function validateConfig_() {
-  if (!TARGET_SCRIPT_ID || TARGET_SCRIPT_ID === '1ofOxPMhU-LXJHfC-Rd5CF5lrTJrKd7DdPS5pKPnjZ3VMqVS6op1KsqpB') {
-    throw new Error('Isi TARGET_SCRIPT_ID dengan Script ID project Admin Guru terlebih dahulu.');
+  const cfg = updaterConfig_();
+  if (!cfg.targetScriptId) {
+    throw new Error('TARGET_SCRIPT_ID belum diatur.');
   }
 }
 
