@@ -563,30 +563,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Dialog konfirmasi sebelum benar-benar mengirim jawaban.
+     * Dialog sebelum benar-benar mengirim jawaban.
      *
-     * Ini untuk mencegah kasus: siswa berada di soal terakhir, tombolnya
-     * berganti dari "Berikutnya" menjadi "Kirim Jawaban", tapi siswa tidak
-     * sadar tombol itu sudah berubah lalu menekannya seperti biasa —
-     * akibatnya ujian langsung dinyatakan selesai walau soal terakhir
-     * (atau soal lain) belum dijawab, dan itu tidak bisa dibatalkan lagi.
+     * Kalau masih ada soal yang belum dijawab, kirim jawaban DIBLOKIR —
+     * siswa diarahkan kembali ke soal pertama yang belum dijawab supaya
+     * diperiksa dulu, bukan ditawari opsi "kirim saja walau belum lengkap".
      */
     private fun confirmSubmitExam() {
         val total = examQuestions.length()
-        val unanswered = total - examAnswers.size
+        val unansweredIndexes = (0 until total).filter { idx ->
+            val questionId = examQuestions.getJSONObject(idx).optString("id")
+            !examAnswers.containsKey(questionId)
+        }
 
-        val message = if (unanswered > 0) {
-            "Anda belum menjawab $unanswered dari $total soal. Soal yang tidak dijawab akan " +
-                "dihitung salah. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
-                "Yakin ingin mengirim sekarang?"
-        } else {
-            "Semua $total soal sudah dijawab. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
-                "Yakin ingin mengirim jawaban sekarang?"
+        if (unansweredIndexes.isNotEmpty()) {
+            val nomorSoal = unansweredIndexes.joinToString(", ") { (it + 1).toString() }
+            AlertDialog.Builder(this)
+                .setTitle("Masih Ada Soal Belum Dijawab")
+                .setMessage(
+                    "Ada ${unansweredIndexes.size} dari $total soal yang belum dijawab " +
+                        "(nomor $nomorSoal).\n\nJawaban belum bisa dikirim. Jawab dulu semua " +
+                        "soal, baru kirim."
+                )
+                .setPositiveButton("Periksa Soal") { _, _ ->
+                    examQuestionIndex = unansweredIndexes.first()
+                    renderExamQuestion()
+                }
+                .setCancelable(true)
+                .show()
+            return
         }
 
         AlertDialog.Builder(this)
             .setTitle("Kirim Jawaban Ujian?")
-            .setMessage(message)
+            .setMessage(
+                "Semua $total soal sudah dijawab. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
+                    "Yakin ingin mengirim jawaban sekarang?"
+            )
             .setPositiveButton("Kirim") { _, _ -> submitExam() }
             .setNegativeButton("Batal, cek lagi", null)
             .setCancelable(true)
