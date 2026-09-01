@@ -354,12 +354,19 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 // Ambil soal sekali untuk sesi ini. Jawaban disimpan berdasarkan QuestionID.
-                // "email" disertakan agar server bisa memvalidasi undangan dan mengacak
-                // urutan soal secara konsisten per siswa (bukan sekadar per ujian).
+                // "email" disertakan agar server bisa memvalidasi undangan, mengacak
+                // urutan soal per siswa, dan melacak/mengembalikan sisa waktu pengerjaan
+                // yang sesungguhnya (dihitung di server, bukan di HP).
                 val r = GasApi.post(
                     "questions",
                     mapOf("examId" to exam.optString("id"), "email" to currentEmail)
                 )
+
+                if (!r.optBoolean("ok", true)) {
+                    toast(r.optString("message", "Ujian tidak dapat diakses"))
+                    return@launch
+                }
+
                 val qs = r.optJSONArray("data") ?: JSONArray()
                 if (qs.length() == 0) {
                     toast("Belum ada soal untuk ujian ini")
@@ -377,10 +384,11 @@ class MainActivity : AppCompatActivity() {
                     examAnswers.clear()
                     examQuestionIndex = 0
                     examSubmitting = false
-                    startExamTimer(exam)
-                } else if (examRemainingMillis <= 0L) {
-                    startExamTimer(exam)
                 }
+
+                // Sisa waktu SELALU disinkronkan dari server setiap soal dimuat,
+                // supaya menutup lalu membuka ulang aplikasi tidak mereset timer.
+                startExamTimerFromServer(r.optLong("remainingSeconds", -1L))
 
                 examActive = true
                 renderExamQuestion()
@@ -390,16 +398,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startExamTimer(exam: JSONObject) {
+    private fun startExamTimerFromServer(remainingSeconds: Long) {
         examTimer?.cancel()
 
-        val minutes = exam.optString("duration").trim().toLongOrNull() ?: 0L
-        if (minutes <= 0L) {
+        if (remainingSeconds <= 0L) {
             examRemainingMillis = 0L
+            updateExamTimerText()
+            if (examActive && !examSubmitting) {
+                toast("Waktu ujian habis. Jawaban akan dikirim otomatis.")
+                submitExam(autoSubmit = true)
+            }
             return
         }
 
-        examRemainingMillis = minutes * 60_000L
+        examRemainingMillis = remainingSeconds * 1_000L
         updateExamTimerText()
 
         examTimer = object : CountDownTimer(examRemainingMillis, 1_000L) {
