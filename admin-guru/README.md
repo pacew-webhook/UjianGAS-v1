@@ -1,52 +1,123 @@
-# Ujian GAS — Admin Guru Lengkap
+# Ujian GAS — Admin Guru
 
-Versi ini memperbaiki masalah tampilan admin pada ZIP sebelumnya. `Index.html` sekarang benar-benar meng-include `Style.html` dan `JavaScript.html`, dan seluruh menu admin berada di satu dashboard yang responsif untuk HP maupun desktop.
+`admin-guru/Code.gs` adalah **backend GAS resmi** untuk Admin Guru sekaligus API yang dipakai aplikasi Android.
 
-## Isi
-- `Code.gs` — backend Apps Script + session login + CRUD
-- `Index.html` — struktur dashboard
-- `Style.html` — CSS lengkap
-- `JavaScript.html` — JavaScript frontend lengkap
-- `UjianGAS_Database_Template.xlsx` — template spreadsheet dari proyek asli
+## File
 
-## Fitur
-- Login admin/guru dengan password SHA-256
-- Session admin sampai 6 jam
-- Dashboard statistik
-- CRUD siswa
-- CRUD ujian
-- CRUD soal pilihan ganda
-- Undangan siswa + email
-- Riwayat undangan
-- Hasil/nilai ujian
-- Pengingat
-- CRUD akun admin
-- UI mobile-friendly
+- `Code.gs` — **backend utama**: `doGet()`, `doPost()`, database, API Android, dan fungsi Admin Guru.
+- `Index.html` — struktur dashboard.
+- `Style.html` — CSS dashboard.
+- `JavaScript.html` — JavaScript dashboard.
+- `Updater.gs` — tool developer opsional untuk sinkronisasi source dari GitHub.
+- `UjianGAS_Database_Template.xlsx` — template spreadsheet.
+
+> **Penting:** `Updater.gs` bukan backend Web App. Jangan mengganti `Code.gs` dengan `Updater.gs`.
+
+## Database
+
+Backend menggunakan satu Google Sheets dengan sheet:
+
+`Admin`, `Siswa`, `Ujian`, `Soal`, `Undangan`, `Jawaban`, `Nilai`, `Pengingat`.
+
+Aplikasi Android juga memakai database dan backend ini. Skema lama `Users / Exams / Questions` tidak digunakan lagi.
 
 ## Cara pasang
-1. Buat/buka Google Sheets yang akan menjadi database.
-2. Pastikan sheet berikut ada: `Admin`, `Siswa`, `Ujian`, `Soal`, `Undangan`, `Jawaban`, `Nilai`, `Pengingat`.
-3. Jika memakai template XLSX, upload lalu buka sebagai Google Sheets.
-4. Buka Apps Script dan buat 4 file persis bernama `Code.gs`, `Index.html`, `Style.html`, `JavaScript.html`.
-5. Paste isi masing-masing file dari paket ini.
-6. Di `Code.gs`, ganti nilai `SHEET_ID` dengan ID Google Sheets kamu.
-7. Jalankan `setupDatabase()` satu kali dari editor Apps Script.
-8. Edit `createInitialAdmin()` terlebih dahulu. Ganti email dan password contoh, lalu jalankan satu kali.
-9. Setelah admin berhasil dibuat, hapus/nonaktifkan `createInitialAdmin()` agar kredensial contoh tidak tersisa di kode.
-10. Deploy → New deployment → Web app.
-11. Execute as: **Me**.
-12. Who has access: sesuai kebutuhan sekolah (misalnya pengguna yang memiliki akses).
-13. Buka URL Web App hasil deployment.
 
-## Penting setelah perubahan kode
-Jika sebelumnya sudah pernah deploy, jangan hanya menekan Save. Buat versi deployment baru:
-**Deploy → Manage deployments → Edit → New version → Deploy**.
+1. Buat atau buka Google Sheets untuk database.
+2. Jika menggunakan template XLSX, upload lalu buka/konversi menjadi Google Sheets.
+3. Buka **Extensions → Apps Script**.
+4. Buat file server-side **`Code.gs`** dan paste isi `admin-guru/Code.gs`.
+5. Buat tiga file HTML:
+   - `Index.html`
+   - `Style.html`
+   - `JavaScript.html`
+6. Di `Code.gs`, ubah:
 
-Jika browser masih menampilkan `<?!= include('Style'); ?>`, berarti URL yang dibuka masih menjalankan deployment/versi lama. Gunakan URL deployment terbaru.
+```javascript
+const SHEET_ID = 'ISI_GOOGLE_SHEET_ID_DI_SINI';
+```
 
-## Catatan integrasi aplikasi siswa
-Folder `gas/` pada ZIP asli memakai struktur database yang berbeda (`Users`, `Exams`, `Questions`, dst.), sedangkan admin panel ini mempertahankan struktur database admin asli (`Admin`, `Siswa`, `Ujian`, `Soal`, dst.). Jadi jika admin panel ini akan dipakai bersama aplikasi Android dari ZIP asli, backend siswa perlu diselaraskan ke struktur sheet yang sama sebelum dipakai produksi.
+menjadi ID Google Sheets milik kamu.
+7. Jalankan `setupDatabase()` satu kali.
+8. Isi placeholder email/password di `createInitialAdmin()` dengan akun admin milik kamu sendiri, jalankan satu kali, lalu jangan commit kredensial asli ke GitHub.
+9. Deploy → **New deployment → Web app**.
+10. Pilih **Execute as: Me**.
+11. Atur akses sesuai kebutuhan pengguna aplikasi.
+12. Simpan URL deployment `/exec`.
 
+## Hubungkan Android
+
+Di:
+
+`app/src/main/java/com/example/ujian_gas/GasApi.kt`
+
+ubah:
+
+```text
+PASTE_GAS_WEB_APP_URL_HERE
+```
+
+menjadi URL deployment `/exec` dari **backend `Code.gs` yang sama**.
+
+Jangan menggunakan URL deployment lama dari developer/project lain.
+
+## Setelah mengubah backend
+
+Jika Web App sebelumnya sudah pernah di-deploy, buat versi deployment baru:
+
+**Deploy → Manage deployments → Edit → New version → Deploy**
+
+Pastikan Android menggunakan URL deployment yang benar.
+
+## Updater GitHub (opsional)
+
+`Updater.gs` hanya diperlukan jika kamu memang ingin mengelola source melalui GitHub dan melakukan sinkronisasi ke Apps Script.
+
+Sebelum digunakan, ubah placeholder:
+
+```javascript
+const TARGET_SCRIPT_ID = 'ISI_SCRIPT_ID_ADMIN_GURU_DI_SINI';
+
+const GITHUB_BASE =
+  'https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru/';
+```
+
+ke project dan repository milik kamu.
+
+Updater tidak membutuhkan dan tidak boleh menggunakan ID project developer lama.
 
 ## Import Bank Soal Excel
-Admin Guru sekarang menyediakan Import Excel `.xlsx` pada menu Bank Soal. Kolom wajib: `Pertanyaan`, `PilihanA`, `PilihanB`, `PilihanC`, `PilihanD`, `JawabanBenar`; `Bobot` opsional. Sistem membaca sheet `Soal` jika tersedia, lalu menyimpan soal ke spreadsheet backend.
+
+Menu Bank Soal mendukung import `.xlsx`.
+
+Kolom wajib:
+- `Pertanyaan`
+- `PilihanA`
+- `PilihanB`
+- `PilihanC`
+- `PilihanD`
+- `JawabanBenar`
+
+`Bobot` bersifat opsional.
+
+## Ringkasan arsitektur
+
+```text
+Android
+   |
+   +----> GAS Web App (admin-guru/Code.gs)
+                    |
+                    +----> Google Sheets
+                    |       Admin
+                    |       Siswa
+                    |       Ujian
+                    |       Soal
+                    |       Undangan
+                    |       Jawaban
+                    |       Nilai
+                    |       Pengingat
+                    |
+                    +----> Dashboard Admin Guru
+```
+
+Dengan struktur ini tidak ada lagi dua backend GAS yang berbeda di source utama.
