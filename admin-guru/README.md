@@ -71,20 +71,77 @@ Pastikan Android menggunakan URL deployment yang benar.
 
 ## Updater GitHub (opsional)
 
-`Updater.gs` hanya diperlukan jika kamu memang ingin mengelola source melalui GitHub dan melakukan sinkronisasi ke Apps Script.
+Jika kamu memakai GitHub sebagai sumber script panjang, **tidak perlu paste `Code.gs`
+ribuan baris secara manual ke Apps Script**.
 
-Sebelum digunakan, ubah placeholder:
+Project `UjianGAS Updater` menjalankan `Updater.gs` untuk mengambil file terbaru dari
+GitHub lalu memperbarui project Apps Script Admin Guru melalui Apps Script API.
 
-```javascript
-const TARGET_SCRIPT_ID = 'ISI_SCRIPT_ID_ADMIN_GURU_DI_SINI';
+### File yang disinkronkan
 
-const GITHUB_BASE =
-  'https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru/';
+- `admin-guru/Code.gs` → file server-side `Code`
+- `admin-guru/Index.html` → `Index`
+- `admin-guru/JavaScript.html` → `JavaScript`
+- `admin-guru/Style.html` → `Style`
+
+### Konfigurasi Updater
+
+Pada **project Apps Script UjianGAS Updater**, buka:
+
+**Project Settings → Script properties**
+
+Tambahkan:
+
+```text
+TARGET_SCRIPT_ID
 ```
 
-ke project dan repository milik kamu.
+Nilainya adalah **Script ID project Apps Script Admin Guru** yang menjadi target.
 
-Updater tidak membutuhkan dan tidak boleh menggunakan ID project developer lama.
+Tambahkan:
+
+```text
+GITHUB_BASE
+```
+
+Contoh format:
+
+```text
+https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru
+```
+
+Ganti `USERNAME/REPOSITORY` dengan repository GitHub milik kamu sendiri.
+
+### Urutan pertama kali
+
+1. Pastikan project Admin Guru sudah ada.
+2. Pastikan Apps Script API dapat digunakan oleh project Updater.
+3. Isi `TARGET_SCRIPT_ID` dan `GITHUB_BASE`.
+4. Jalankan `testUpdater()`.
+5. Jika test berhasil, jalankan `updateBackend()`.
+6. Setelah update selesai, buka project Admin Guru dan cek `Code`, `Index`,
+   `JavaScript`, dan `Style`.
+7. Jika backend berubah, buat **deployment/version baru** sesuai kebutuhan.
+
+### Update berikutnya
+
+Setiap kali source di GitHub berubah:
+
+```text
+Commit GitHub
+     ↓
+testUpdater()
+     ↓
+updateBackend()
+     ↓
+Apps Script Admin Guru diperbarui
+```
+
+Tidak perlu copy-paste `Code.gs` yang panjang secara manual.
+
+> `Updater.gs` adalah tool sinkronisasi, bukan backend Web App.
+> Backend Web App tetap `admin-guru/Code.gs`.
+
 
 ## Import Bank Soal Excel
 
@@ -123,21 +180,3 @@ Android
 Dengan struktur ini tidak ada lagi dua backend GAS yang berbeda di source utama.
 
 
-## Konfigurasi sekali di Apps Script
-
-Untuk backend `Code.gs`, simpan `SHEET_ID` di Project Settings > Script properties.
-Jangan menaruh Spreadsheet ID di source GitHub.
-
-Untuk updater, simpan:
-- `TARGET_SCRIPT_ID`
-- `GITHUB_BASE`
-
-`Updater.gs` mengambil source terbaru dari GitHub sehingga `Code.gs` yang panjang tidak
-perlu dipaste manual setiap kali ada revisi.
-
-Untuk admin awal, simpan sementara:
-- `INITIAL_ADMIN_EMAIL`
-- `INITIAL_ADMIN_PASSWORD`
-
-Lalu jalankan `createInitialAdmin()`. Jika akun sudah ada, fungsi akan mengaktifkan akun
-dan mereset password. Setelah login berhasil, jalankan `clearInitialAdminCredentials()`.
