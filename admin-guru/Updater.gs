@@ -14,21 +14,24 @@
  *   admin-guru/Style.html        -> Style
  *
  * KONFIGURASI:
- *   Simpan di Project Settings > Script properties pada project
- *   "UjianGAS Updater":
+ *   TARGET_SCRIPT_ID disimpan di Project Settings > Script properties.
  *
- *   TARGET_SCRIPT_ID = Script ID project Apps Script "Admin Guru"
- *   GITHUB_BASE      = URL folder raw GitHub, contoh:
- *                      https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru
+ *   GitHub source sudah ditetapkan ke:
+ *   https://github.com/pacew-webhook/UjianGAS-v1/tree/main/admin-guru
+ *
+ *   Raw source yang digunakan updater:
+ *   https://raw.githubusercontent.com/pacew-webhook/UjianGAS-v1/main/admin-guru
  *
  * CATATAN:
  * - Tidak ada ID project/developer lama yang ditanam di source.
  * - Updater tidak mengubah Script Properties milik project target.
  * - Updater hanya mengganti file yang tercantum di FILE_MAP.
  * - File lain pada project target dipertahankan.
- * - Jangan menaruh SHEET_ID di Updater. SHEET_ID adalah property project
- *   backend Admin Guru dan dibaca oleh Code.gs.
+ * - SHEET_ID bukan konfigurasi Updater; SHEET_ID dibaca oleh Code.gs target.
  */
+
+const GITHUB_BASE =
+  'https://raw.githubusercontent.com/pacew-webhook/UjianGAS-v1/main/admin-guru';
 
 const TARGET_BACKEND_NAME = 'Code';
 
@@ -41,16 +44,13 @@ const FILE_MAP = [
 
 /**
  * Membaca konfigurasi Updater dari Script Properties.
+ * Hanya TARGET_SCRIPT_ID yang perlu diisi manual.
  */
 function updaterConfig_() {
   const props = PropertiesService.getScriptProperties();
 
   const targetScriptId = String(
     props.getProperty('TARGET_SCRIPT_ID') || ''
-  ).trim();
-
-  const githubBase = String(
-    props.getProperty('GITHUB_BASE') || ''
   ).trim();
 
   if (!targetScriptId) {
@@ -60,23 +60,9 @@ function updaterConfig_() {
     );
   }
 
-  if (!githubBase) {
-    throw new Error(
-      'GITHUB_BASE belum diatur. ' +
-      'Contoh: https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru'
-    );
-  }
-
-  if (!/^https:\/\/raw\.githubusercontent\.com\//i.test(githubBase)) {
-    throw new Error(
-      'GITHUB_BASE harus berupa URL raw GitHub yang diawali ' +
-      'https://raw.githubusercontent.com/'
-    );
-  }
-
   return {
     targetScriptId: targetScriptId,
-    githubBase: githubBase.replace(/\/+$/, '')
+    githubBase: GITHUB_BASE
   };
 }
 
