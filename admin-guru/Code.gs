@@ -834,6 +834,49 @@ function isExamWithinWindow_(exam, allowGraceSeconds) {
   return t >= window.start.getTime() && t <= (window.end.getTime() + grace);
 }
 
+/*
+ * Pengacakan soal deterministik per siswa+ujian.
+ * Dua siswa dengan seed berbeda akan mendapat urutan berbeda, tapi
+ * siswa yang sama yang memuat ulang soal ujian yang sama akan selalu
+ * mendapat urutan yang persis sama (penting kalau koneksi terputus
+ * di tengah ujian dan soal dimuat ulang).
+ */
+function stringToSeed_(str) {
+  let h = 0;
+  const s = String(str);
+
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  }
+
+  return h >>> 0;
+}
+
+function mulberry32_(seed) {
+  let a = seed >>> 0;
+
+  return function() {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seededShuffle_(array, seedString) {
+  const arr = array.slice();
+  const rand = mulberry32_(stringToSeed_(seedString));
+
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+
+  return arr;
+}
+
 function safeNumber_(v, fallback) {
 
   const n = Number(v);
@@ -2715,6 +2758,11 @@ function getStudentQuestionsApi_(data) {
     String(data.examId || '')
       .trim();
 
+  const email =
+    String(data.email || '')
+      .trim()
+      .toLowerCase();
+
   if (!examId) {
 
     return {
@@ -2723,6 +2771,34 @@ function getStudentQuestionsApi_(data) {
 
       message:
         'ExamID wajib diisi.',
+
+      data: []
+    };
+  }
+
+  if (!email) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'Email wajib diisi.',
+
+      data: []
+    };
+  }
+
+  const student = findStudentByEmail_(email);
+
+  if (!student) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'Siswa tidak ditemukan.',
 
       data: []
     };
@@ -2766,6 +2842,19 @@ function getStudentQuestionsApi_(data) {
     };
   }
 
+  if (!studentHasExamInvitation_(student.StudentID, examId)) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'Anda tidak memiliki undangan untuk ujian ini.',
+
+      data: []
+    };
+  }
+
   if (!isExamWithinWindow_(exam, 0)) {
 
     return {
@@ -2780,13 +2869,18 @@ function getStudentQuestionsApi_(data) {
   }
 
   const questions =
-    rows_('Soal')
-      .filter(function(q) {
+    // Diacak dengan seed StudentID+ExamID: urutan berbeda antar siswa,
+    // tapi tetap konsisten jika siswa yang sama memuat ulang soal ini.
+    seededShuffle_(
+      rows_('Soal')
+        .filter(function(q) {
 
-        return String(q.ExamID) ===
-          examId;
+          return String(q.ExamID) ===
+            examId;
 
-      })
+        }),
+      student.StudentID + ':' + examId
+    )
       .map(function(q) {
 
         /*
