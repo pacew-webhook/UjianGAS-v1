@@ -2251,6 +2251,92 @@ function deleteInvitation(
   );
 }
 
+/**
+ * Reset percobaan ujian seorang siswa: mengosongkan MulaiPada &
+ * mengembalikan Status Undangan ke 'SENT', supaya siswa bisa memulai
+ * ujian lagi dengan batas waktu yang baru (mulai + durasi dihitung
+ * ulang saat siswa membuka soal berikutnya).
+ *
+ * Dipakai saat siswa "terkunci" karena MulaiPada lama (dari percobaan
+ * sebelumnya / jadwal ujian yang sudah diubah Guru) membuat batas
+ * waktu pribadinya sudah lewat, padahal jendela jadwal ujian
+ * sekarang masih berlaku.
+ *
+ * Sesi Anti-Cheat (ExamSessions) yang masih aktif untuk percobaan
+ * lama ikut ditutup (EXPIRED) supaya siswa mendapat sesi & hitungan
+ * pelanggaran yang bersih di percobaan barunya. Nilai yang sudah
+ * pernah dikumpulkan (sheet Nilai) TIDAK dihapus oleh fungsi ini.
+ */
+function resetStudentAttempt(
+  token,
+  inviteId
+) {
+
+  requireAdmin_(token);
+
+  const invitation =
+    rows_('Undangan').find(function(i) {
+
+      return String(i.InviteID) ===
+        String(inviteId);
+
+    });
+
+  if (!invitation) {
+    throw new Error('Undangan tidak ditemukan.');
+  }
+
+  if (
+    studentAlreadySubmitted_(
+      invitation.StudentID,
+      invitation.ExamID
+    )
+  ) {
+    throw new Error(
+      'Ujian ini sudah dikumpulkan siswa dan sudah dinilai. ' +
+      'Tidak bisa direset dari sini.'
+    );
+  }
+
+  updateById_('Undangan', 'InviteID', inviteId, {
+    MulaiPada: '',
+    Status: 'SENT'
+  });
+
+  const activeSession =
+    findActiveSessionFor_(
+      invitation.StudentID,
+      invitation.ExamID
+    );
+
+  const closedStates =
+    ['SUBMITTED', 'FORCE_SUBMITTED', 'TERMINATED', 'EXPIRED'];
+
+  if (
+    activeSession &&
+    closedStates.indexOf(
+      String(activeSession.Status || '').toUpperCase()
+    ) < 0
+  ) {
+
+    updateById_('ExamSessions', 'SessionID', activeSession.SessionID, {
+      Status: 'EXPIRED',
+      ActualEndTime: now_()
+    });
+  }
+
+  auditLog_(
+    invitation.StudentID,
+    'ADMIN',
+    'RESET_ATTEMPT',
+    inviteId,
+    invitation.ExamID,
+    'Percobaan ujian direset oleh Guru/Admin.'
+  );
+
+  return { ok: true, message: 'Percobaan siswa berhasil direset.' };
+}
+
 /* =========================
    ADMIN - HASIL
    ========================= */
