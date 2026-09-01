@@ -190,7 +190,7 @@ function fetchGitHub_(filename) {
 }
 
 function validateConfig_() {
-  if (!TARGET_SCRIPT_ID || TARGET_SCRIPT_ID === 'ISI_SCRIPT_ID_ADMIN_GURU_DI_SINI') {
+  if (!TARGET_SCRIPT_ID || TARGET_SCRIPT_ID === '1ofOxPMhU-LXJHfC-Rd5CF5lrTJrKd7DdPS5pKPnjZ3VMqVS6op1KsqpB') {
     throw new Error('Isi TARGET_SCRIPT_ID dengan Script ID project Admin Guru terlebih dahulu.');
   }
 }
