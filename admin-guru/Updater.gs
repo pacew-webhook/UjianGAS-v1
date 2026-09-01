@@ -17,7 +17,7 @@
  * 2) Jangan mengganti URL Web App. Updater hanya memperbarui isi project.
  */
 
-const TARGET_SCRIPT_ID = 'ISI_SCRIPT_ID_ADMIN_GURU_DI_SINI';
+const TARGET_SCRIPT_ID = '1ofOxPMhU-LXJHfC-Rd5CF5lrTJrKd7DdPS5pKPnjZ3VMqVS6op1KsqpB';
 
 const GITHUB_BASE =
   'https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru/';
