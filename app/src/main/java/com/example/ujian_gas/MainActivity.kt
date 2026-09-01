@@ -354,7 +354,12 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 // Ambil soal sekali untuk sesi ini. Jawaban disimpan berdasarkan QuestionID.
-                val r = GasApi.post("questions", mapOf("examId" to exam.optString("id")))
+                // "email" disertakan agar server bisa memvalidasi undangan dan mengacak
+                // urutan soal secara konsisten per siswa (bukan sekadar per ujian).
+                val r = GasApi.post(
+                    "questions",
+                    mapOf("examId" to exam.optString("id"), "email" to currentEmail)
+                )
                 val qs = r.optJSONArray("data") ?: JSONArray()
                 if (qs.length() == 0) {
                     toast("Belum ada soal untuk ujian ini")
