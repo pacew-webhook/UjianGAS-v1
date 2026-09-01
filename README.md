@@ -119,3 +119,24 @@ Jika ada perubahan API:
 2. pastikan `GasApi.kt` tetap memakai endpoint yang sama;
 3. uji login → daftar ujian → soal → submit;
 4. baru deploy versi GAS baru.
+
+
+## Alur sinkronisasi GAS dari GitHub
+
+Repository ini adalah sumber kode. Script panjang `Code.gs` tidak perlu dipaste manual
+ke editor Apps Script setiap kali ada perubahan.
+
+Project Apps Script Admin Guru menggunakan `Updater.gs` untuk mengambil:
+- `admin-guru/Code.gs`
+- `admin-guru/Index.html`
+- `admin-guru/JavaScript.html`
+- `admin-guru/Style.html`
+
+Konfigurasi yang bersifat rahasia/lokal disimpan di **Script Properties**, bukan di GitHub:
+- `SHEET_ID` = ID spreadsheet database Admin Guru
+- `INITIAL_ADMIN_EMAIL` = email admin awal (hanya saat membuat/reset admin awal)
+- `INITIAL_ADMIN_PASSWORD` = password admin awal (hanya saat membuat/reset admin awal)
+- `TARGET_SCRIPT_ID` = Script ID project Apps Script target untuk Updater
+- `GITHUB_BASE` = URL folder raw GitHub `admin-guru/`
+
+Dengan pola ini, update dari GitHub tidak menghapus Script Properties.
