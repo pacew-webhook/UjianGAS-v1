@@ -132,6 +132,7 @@ function setupDatabase() {
       'Nama',
       'Email',
       'PasswordHash',
+      'Salt',
       'Role',
       'Status',
       'CreatedAt'
@@ -142,6 +143,7 @@ function setupDatabase() {
       'Nama',
       'Email',
       'PasswordHash',
+      'Salt',
       'Kelas',
       'Status',
       'CreatedAt'
@@ -314,7 +316,9 @@ function createInitialAdmin() {
       }
     }
 
-    setAdminField_('PasswordHash', hash_(password));
+    const resetSalt = generateSalt_();
+    setAdminField_('PasswordHash', hashPassword_(password, resetSalt));
+    setAdminField_('Salt', resetSalt);
     setAdminField_('Status', 'ACTIVE');
     setAdminField_('Role', 'ADMIN');
     SpreadsheetApp.flush();
@@ -375,6 +379,61 @@ function hash_(value) {
   }).join('');
 }
 
+/*
+ * generateSalt_ / hashPassword_
+ * ------------------------------
+ * Password baru (admin & siswa) dihash dengan salt unik per akun,
+ * bukan lagi SHA-256 polos, supaya tidak rawan rainbow-table attack.
+ *
+ * Akun LAMA yang belum punya kolom Salt terisi tetap bisa login:
+ * verifyPassword_() otomatis jatuh ke pengecekan hash_() lama (tanpa
+ * salt) untuk akun tersebut, lalu diam-diam meng-upgrade akun itu ke
+ * skema bersalt begitu login berhasil (lihat migratePasswordIfNeeded_
+ * yang dipanggil dari loginAdmin dan loginStudentApi_).
+ */
+function generateSalt_() {
+  return Utilities.getUuid().replace(/-/g, '') +
+    Utilities.getUuid().replace(/-/g, '');
+}
+
+function hashPassword_(password, salt) {
+  return hash_(String(salt || '') + ':' + String(password || ''));
+}
+
+/**
+ * Mengecek password terhadap satu baris akun (Admin atau Siswa).
+ * account harus punya field PasswordHash, dan boleh punya Salt (opsional).
+ */
+function verifyPassword_(account, password) {
+  const salt = String(account.Salt || '');
+
+  if (salt) {
+    return String(account.PasswordHash || '') === hashPassword_(password, salt);
+  }
+
+  // Akun lama tanpa salt: cocokkan dengan skema lama.
+  return String(account.PasswordHash || '') === hash_(password || '');
+}
+
+/**
+ * Jika akun berhasil login memakai skema lama (tanpa salt), migrasikan
+ * diam-diam ke PasswordHash bersalt supaya makin lama makin sedikit
+ * akun yang masih pakai skema lemah.
+ */
+function migratePasswordIfNeeded_(sheetName, idField, account, password) {
+  if (String(account.Salt || '')) return;
+
+  try {
+    const newSalt = generateSalt_();
+    updateByIdUnlocked_(sheetName, idField, account[idField], {
+      PasswordHash: hashPassword_(password, newSalt),
+      Salt: newSalt
+    });
+  } catch (err) {
+    // Migrasi gagal tidak boleh menggagalkan login yang sudah valid.
+  }
+}
+
 /* =========================
    ADMIN
    ========================= */
@@ -413,6 +472,8 @@ function createAdmin_(nama, email, password, role) {
     throw new Error('Email admin sudah ada.');
   }
 
+  const salt = generateSalt_();
+
   return append_('Admin', {
 
     AdminID: id_('ADM'),
@@ -421,7 +482,9 @@ function createAdmin_(nama, email, password, role) {
 
     Email: normalized,
 
-    PasswordHash: hash_(password),
+    PasswordHash: hashPassword_(password, salt),
+
+    Salt: salt,
 
     Role: String(role || 'GURU')
       .toUpperCase(),
@@ -529,11 +592,10 @@ function loginAdmin(email, password) {
       .trim()
       .toLowerCase() === normalized &&
 
-      String(a.PasswordHash || '') ===
-      hash_(password || '') &&
-
       String(a.Status || '')
-        .toUpperCase() === 'ACTIVE';
+        .toUpperCase() === 'ACTIVE' &&
+
+      verifyPassword_(a, password || '');
 
   });
 
@@ -542,6 +604,8 @@ function loginAdmin(email, password) {
       'Email atau password salah.'
     );
   }
+
+  migratePasswordIfNeeded_('Admin', 'AdminID', admin, password || '');
 
   return {
 
@@ -716,6 +780,58 @@ function deleteById_(sheetName, idField, id) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/*
+ * Validasi jendela waktu ujian (Tanggal + JamMulai/JamSelesai).
+ * Sebelumnya validasi ini hanya dilakukan di Android (client), sehingga
+ * seseorang yang memanggil endpoint langsung bisa mengambil/mengirim
+ * jawaban di luar jam ujian. Sekarang dicek juga di server.
+ */
+function parseExamDateTime_(tanggal, jam) {
+  const dateParts = String(tanggal || '').trim().split('-');
+  const timeParts = String(jam || '').trim().split(':');
+
+  if (dateParts.length < 3 || timeParts.length < 2) return null;
+
+  const year = parseInt(dateParts[0], 10);
+  const month = parseInt(dateParts[1], 10);
+  const day = parseInt(dateParts[2], 10);
+  const hour = parseInt(timeParts[0], 10);
+  const minute = parseInt(timeParts[1], 10);
+
+  if ([year, month, day, hour, minute].some(function(n) { return isNaN(n); })) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, hour, minute, 0);
+}
+
+function getExamWindow_(exam) {
+  const start = parseExamDateTime_(exam.Tanggal, exam.JamMulai);
+  const end = parseExamDateTime_(exam.Tanggal, exam.JamSelesai);
+
+  if (!start || !end) return null;
+
+  return { start: start, end: end };
+}
+
+/**
+ * allowGraceSeconds: toleransi tambahan di akhir jendela waktu
+ * (dipakai saat submit, supaya jawaban yang dikirim tepat saat waktu
+ * habis tidak ditolak hanya karena keterlambatan jaringan).
+ */
+function isExamWithinWindow_(exam, allowGraceSeconds) {
+  const window = getExamWindow_(exam);
+
+  // Data Tanggal/Jam tidak lengkap/tidak valid -> jangan blokir,
+  // supaya data ujian lama yang belum rapi tidak tiba-tiba terkunci.
+  if (!window) return true;
+
+  const grace = safeNumber_(allowGraceSeconds, 0) * 1000;
+  const t = now_().getTime();
+
+  return t >= window.start.getTime() && t <= (window.end.getTime() + grace);
 }
 
 function safeNumber_(v, fallback) {
@@ -2315,11 +2431,10 @@ function loginStudentApi_(data) {
         .trim()
         .toLowerCase() === email &&
 
-        String(s.PasswordHash || '') ===
-        hash_(password) &&
-
         String(s.Status || '')
-          .toUpperCase() === 'ACTIVE';
+          .toUpperCase() === 'ACTIVE' &&
+
+        verifyPassword_(s, password);
 
     });
 
@@ -2333,6 +2448,8 @@ function loginStudentApi_(data) {
         'Email atau password salah.'
     };
   }
+
+  migratePasswordIfNeeded_('Siswa', 'StudentID', student, password);
 
   return {
 
@@ -2437,6 +2554,8 @@ function registerStudentApi_(data) {
     };
   }
 
+  const registerSalt = generateSalt_();
+
   const student =
     append_('Siswa', {
 
@@ -2450,7 +2569,10 @@ function registerStudentApi_(data) {
         email,
 
       PasswordHash:
-        hash_(password),
+        hashPassword_(password, registerSalt),
+
+      Salt:
+        registerSalt,
 
       Kelas:
         '',
@@ -2644,6 +2766,19 @@ function getStudentQuestionsApi_(data) {
     };
   }
 
+  if (!isExamWithinWindow_(exam, 0)) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'Ujian hanya dapat diakses pada jadwal yang ditentukan.',
+
+      data: []
+    };
+  }
+
   const questions =
     rows_('Soal')
       .filter(function(q) {
@@ -2710,6 +2845,10 @@ function submitStudentExamApi_(data) {
   if (!exam) return { ok: false, message: 'Ujian tidak ditemukan.' };
   if (String(exam.Status || '').toUpperCase() !== 'PUBLISHED') {
     return { ok: false, message: 'Ujian belum tersedia.' };
+  }
+
+  if (!isExamWithinWindow_(exam, 120)) {
+    return { ok: false, message: 'Waktu ujian sudah berakhir atau belum dimulai.' };
   }
 
   if (!studentHasExamInvitation_(student.StudentID, examId)) {
