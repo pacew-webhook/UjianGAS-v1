@@ -197,6 +197,7 @@ class MainActivity : ComponentActivity(), AntiCheatListener {
         }
     }
 
+    @Composable
     private fun screenPadding() = Modifier
         .fillMaxSize()
         .verticalScroll(rememberScrollState())
