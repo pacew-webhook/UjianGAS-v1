@@ -23,7 +23,38 @@ Google Sheets
    +-- Jawaban
    +-- Nilai
    +-- Pengingat
+   +-- ExamSessions   (Anti-Cheat)
+   +-- Violations     (Anti-Cheat)
+   +-- AuditLogs       (Anti-Cheat)
 ```
+
+### Fitur Anti-Cheat & Exam Proctoring
+
+Lihat `PRD_UjianGAS_AntiCheat_Exam_Proctoring.md` untuk spesifikasi lengkap.
+Implementasi saat ini mencakup:
+
+- **Android:** Exam Full Screen, FLAG_SECURE (cegah screenshot & screen
+  recording), Lock Task/kiosk best-effort, deteksi app background &
+  split-screen/multi-window, proteksi copy/paste pada soal, dialog
+  Peringatan/Kunci/Terminasi, PIN Pengawas, heartbeat berkala, dan antrian
+  pelanggaran offline (`ViolationQueue`) yang otomatis dikirim ulang saat
+  koneksi pulih.
+- **Backend:** sheet `ExamSessions`, `Violations`, `AuditLogs`; action baru
+  `violation`, `violation_batch`, `heartbeat`, `unlock`; validasi sesi & PIN
+  Pengawas (hash+salt, bukan plaintext) di server.
+- **Admin Guru:** menu **Monitoring** (status per siswa, jumlah pelanggaran,
+  unlock/lock/force submit, audit log) dan pengaturan Anti-Cheat per ujian
+  di form Buat/Edit Ujian (aktif/nonaktif tiap proteksi, batas pelanggaran,
+  aksi setelah batas, PIN Pengawas).
+
+**Setelah menarik pembaruan ini, jalankan ulang fungsi `setupDatabase()`**
+di Apps Script Editor supaya sheet `ExamSessions`, `Violations`, `AuditLogs`,
+dan kolom Anti-Cheat baru pada sheet `Ujian` otomatis dibuat (fungsi ini aman
+dijalankan berulang kali; tidak menghapus data yang sudah ada).
+
+Fitur proctoring lanjutan yang **belum** termasuk (sesuai bagian 20 PRD —
+memang bukan MVP): Device Binding, Network Monitoring, Location
+Verification, Camera/Face/AI Proctoring.
 
 ### Sumber backend resmi
 
@@ -48,7 +79,9 @@ File lama `gas/Code.gs` yang menggunakan skema `Users / Exams / Questions` tidak
 
 1. Buat Google Sheets baru untuk database aplikasi.
 2. Pastikan sheet berikut tersedia:
-   `Admin`, `Siswa`, `Ujian`, `Soal`, `Undangan`, `Jawaban`, `Nilai`, `Pengingat`.
+   `Admin`, `Siswa`, `Ujian`, `Soal`, `Undangan`, `Jawaban`, `Nilai`, `Pengingat`,
+   `ExamSessions`, `Violations`, `AuditLogs` (tiga terakhir untuk Anti-Cheat;
+   jalankan `setupDatabase()` untuk membuatnya otomatis).
 3. Buka **Extensions → Apps Script**.
 4. Buat file server-side bernama **`Code.gs`**.
 5. Paste isi `admin-guru/Code.gs`.
