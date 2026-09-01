@@ -9,6 +9,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.setPadding
 import androidx.lifecycle.lifecycleScope
@@ -537,7 +538,7 @@ class MainActivity : AppCompatActivity() {
             })
         } else {
             nav.addView(primaryButton("Kirim Jawaban") {
-                submitExam()
+                if (!examSubmitting) confirmSubmitExam()
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 leftMargin = if (index > 0) dp(6) else 0
             })
@@ -545,6 +546,37 @@ class MainActivity : AppCompatActivity() {
         box.addView(nav, lp(top = 20))
 
         setScreen(scroll, box)
+    }
+
+    /**
+     * Dialog konfirmasi sebelum benar-benar mengirim jawaban.
+     *
+     * Ini untuk mencegah kasus: siswa berada di soal terakhir, tombolnya
+     * berganti dari "Berikutnya" menjadi "Kirim Jawaban", tapi siswa tidak
+     * sadar tombol itu sudah berubah lalu menekannya seperti biasa —
+     * akibatnya ujian langsung dinyatakan selesai walau soal terakhir
+     * (atau soal lain) belum dijawab, dan itu tidak bisa dibatalkan lagi.
+     */
+    private fun confirmSubmitExam() {
+        val total = examQuestions.length()
+        val unanswered = total - examAnswers.size
+
+        val message = if (unanswered > 0) {
+            "Anda belum menjawab $unanswered dari $total soal. Soal yang tidak dijawab akan " +
+                "dihitung salah. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
+                "Yakin ingin mengirim sekarang?"
+        } else {
+            "Semua $total soal sudah dijawab. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
+                "Yakin ingin mengirim jawaban sekarang?"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Kirim Jawaban Ujian?")
+            .setMessage(message)
+            .setPositiveButton("Kirim") { _, _ -> submitExam() }
+            .setNegativeButton("Batal, cek lagi", null)
+            .setCancelable(true)
+            .show()
     }
 
     private fun submitExam(autoSubmit: Boolean = false) {
