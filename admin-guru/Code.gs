@@ -920,9 +920,17 @@ function parseExamDateTime_(tanggal, jam) {
 
 function getExamWindow_(exam) {
   const start = parseExamDateTime_(exam.Tanggal, exam.JamMulai);
-  const end = parseExamDateTime_(exam.Tanggal, exam.JamSelesai);
+  let end = parseExamDateTime_(exam.Tanggal, exam.JamSelesai);
 
   if (!start || !end) return null;
+
+  // Ujian yang melewati tengah malam (mis. Jam Mulai 23:16, Jam Selesai
+  // 00:16) akan menghasilkan `end` yang lebih awal dari `start` kalau
+  // keduanya dihitung pada Tanggal yang sama. Dalam kasus itu, anggap
+  // Jam Selesai jatuh pada hari berikutnya.
+  if (end.getTime() <= start.getTime()) {
+    end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+  }
 
   return { start: start, end: end };
 }
