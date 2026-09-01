@@ -260,12 +260,12 @@ function createInitialAdmin() {
    * Isi kredensial admin awal milik kamu sendiri sebelum menjalankan fungsi ini.
    * Jangan commit kredensial asli ke GitHub.
    */
-  const email = 'ISI_EMAIL_ADMIN_DI_SINI';
-  const password = 'ISI_PASSWORD_ADMIN_DI_SINI';
+  const email = 'ujianku784@gmail.com';
+  const password = 'ujianku123';
 
   if (
-    email === 'ISI_EMAIL_ADMIN_DI_SINI' ||
-    password === 'ISI_PASSWORD_ADMIN_DI_SINI'
+    email === 'ujianku784@gmail.com' ||
+    password === 'ujianku123'
   ) {
     throw new Error(
       'Isi email dan password admin awal terlebih dahulu. ' +
