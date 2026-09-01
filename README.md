@@ -66,6 +66,8 @@ File lama `gas/Code.gs` yang menggunakan skema `Users / Exams / Questions` tidak
 12. Atur akses sesuai kebutuhan. Untuk aplikasi siswa yang harus bisa login tanpa akun Google, gunakan pengaturan akses yang mengizinkan pengguna aplikasi mengakses Web App.
 13. Salin URL deployment yang berakhiran `/exec`.
 
+> **Update dari versi lama?** Cukup paste ulang `Code.gs` terbaru lalu jalankan `setupDatabase()` sekali lagi — aman diulang, hanya menambahkan kolom baru (`Salt`) ke sheet `Admin`/`Siswa` tanpa menghapus data. Tidak perlu jalankan `createInitialAdmin()` lagi; akun lama otomatis ter-upgrade ke skema password bersalt saat login berikutnya. Lalu deploy ulang sebagai versi baru (jangan bikin deployment baru, edit deployment aktif → New version).
+
 > Jangan memakai `gas/Code.gs` sebagai backend. File tersebut berasal dari skema lama dan sengaja tidak lagi disertakan dalam source final.
 
 ## Hubungkan Android
@@ -81,6 +83,8 @@ Isi:
 dengan URL Web App milik kamu, misalnya URL deployment GAS sendiri.
 
 Android dan Admin Guru sekarang harus menunjuk ke **deployment GAS yang sama**.
+
+> Sejak revisi keamanan terbaru, endpoint `questions` juga membutuhkan parameter `email` (email siswa yang sedang login) selain `examId` — dipakai server untuk memvalidasi undangan ujian dan mengacak urutan soal per siswa. `MainActivity.kt` sudah mengirim ini secara otomatis; kalau ada client lain yang memanggil endpoint ini, pastikan ikut mengirim `email`.
 
 ## Build Android
 
@@ -104,7 +108,24 @@ GitHub Actions juga dapat digunakan melalui workflow `build.yml`.
 
 ## Catatan keamanan
 
-Versi ini mempertahankan behavior aplikasi yang ada. Password siswa/admin pada database dan mekanisme session mengikuti implementasi backend saat ini. Untuk produksi dengan kebutuhan keamanan tinggi, pertimbangkan hashing yang konsisten, token/session yang lebih ketat, validasi waktu ujian di server, rate limiting, dan audit log.
+Status per revisi terbaru:
+
+- ✅ **Hashing password bersalt** — password admin/siswa baru dihash dengan salt unik per akun (`generateSalt_`, `hashPassword_`). Akun lama tanpa salt tetap bisa login (fallback ke skema lama) dan otomatis ter-upgrade begitu login berhasil (`migratePasswordIfNeeded_`).
+- ✅ **Validasi waktu ujian di server** — `getStudentQuestionsApi_` dan `submitStudentExamApi_` sekarang mengecek `Tanggal`/`JamMulai`/`JamSelesai` ujian terhadap waktu server (`isExamWithinWindow_`), bukan hanya divalidasi di Android. Submit diberi toleransi 120 detik untuk keterlambatan jaringan.
+- ✅ **Validasi undangan saat ambil soal** — `getStudentQuestionsApi_` sekarang juga mengecek siswa memang diundang ke ujian tersebut (sebelumnya hanya dicek saat submit).
+- ✅ **Pengacakan soal per siswa** — urutan soal diacak per siswa dengan seed deterministik `StudentID:ExamID` (`seededShuffle_`), supaya tidak mudah saling contek dari urutan, tapi tetap konsisten kalau soal dimuat ulang.
+- ⚠️ Masih jadi rekomendasi untuk produksi dengan kebutuhan keamanan tinggi: rate limiting/lock akun setelah percobaan login gagal berulang, token/session yang lebih ketat, dan audit log aktivitas admin.
+
+## Riwayat revisi
+
+- **Revisi keamanan & anti-contek (terbaru):**
+  - Tambah kolom `Salt` di sheet `Admin` dan `Siswa` (otomatis dibuat ulang oleh `setupDatabase()`).
+  - Tambah fungsi `generateSalt_`, `hashPassword_`, `verifyPassword_`, `migratePasswordIfNeeded_` di `Code.gs`.
+  - Tambah fungsi `parseExamDateTime_`, `getExamWindow_`, `isExamWithinWindow_` di `Code.gs` untuk validasi jam ujian di server.
+  - Tambah fungsi `stringToSeed_`, `mulberry32_`, `seededShuffle_` di `Code.gs` untuk pengacakan soal per siswa.
+  - `getStudentQuestionsApi_` kini mewajibkan parameter `email`, memvalidasi undangan, dan mengembalikan soal dalam urutan teracak per siswa.
+  - `MainActivity.kt`: pemanggilan endpoint `questions` diperbarui untuk menyertakan `email`.
+
 
 ## Import Bank Soal
 
@@ -140,3 +161,10 @@ Konfigurasi yang bersifat rahasia/lokal disimpan di **Script Properties**, bukan
 - `GITHUB_BASE` = URL folder raw GitHub `admin-guru/`
 
 Dengan pola ini, update dari GitHub tidak menghapus Script Properties.
+
+
+## Sinkronisasi source GitHub ke Apps Script
+
+Jika `Code.gs` terlalu panjang untuk dipaste manual, gunakan project **UjianGAS Updater**.
+Konfigurasikan `TARGET_SCRIPT_ID` dan `GITHUB_BASE` di Script Properties Updater, lalu jalankan
+`testUpdater()` dan `updateBackend()`. Backend Web App tetap `admin-guru/Code.gs`.
