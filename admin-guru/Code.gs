@@ -96,6 +96,23 @@ function doPost(e) {
       case 'reminders':
         return jsonResponse_(getStudentRemindersApi_(data));
 
+      /* ===== Anti-Cheat & Exam Proctoring ===== */
+
+      case 'violation':
+        return jsonResponse_(reportViolationApi_(data));
+
+      case 'violation_batch':
+        return jsonResponse_(reportViolationBatchApi_(data));
+
+      case 'heartbeat':
+        return jsonResponse_(heartbeatApi_(data));
+
+      case 'unlock':
+        return jsonResponse_(unlockSessionWithPinApi_(data));
+
+      case 'session_status':
+        return jsonResponse_(getSessionStatusApi_(data));
+
       default:
         return jsonResponse_({
           ok: false,
@@ -159,7 +176,20 @@ function setupDatabase() {
       'JamSelesai',
       'Status',
       'CreatedAt',
-      'CreatedBy'
+      'CreatedBy',
+      // Konfigurasi Anti-Cheat & Exam Proctoring (PRD UjianGAS Anti-Cheat).
+      'AntiCheatOn',
+      'ExamLockOn',
+      'PreventScreenshot',
+      'PreventScreenRecording',
+      'PreventCopyPaste',
+      'DetectBackground',
+      'DetectSplitScreen',
+      'MaxViolations',
+      'ActionAfterLimit',
+      'RequireSupervisorPin',
+      'SupervisorPinHash',
+      'SupervisorPinSalt'
     ],
 
     Soal: [
@@ -210,6 +240,53 @@ function setupDatabase() {
       'Pesan',
       'Target',
       'Waktu'
+    ],
+
+    /* =========================
+       ANTI-CHEAT & EXAM PROCTORING
+       (PRD_UjianGAS_AntiCheat_Exam_Proctoring.md)
+       ========================= */
+
+    ExamSessions: [
+      'SessionID',
+      'ExamID',
+      'StudentID',
+      'InviteID',
+      'StartTime',
+      'ExpectedEndTime',
+      'ActualEndTime',
+      'Status',
+      'ViolationCount',
+      'LastHeartbeat',
+      'DeviceInfo',
+      'AppVersion',
+      'CreatedAt'
+    ],
+
+    Violations: [
+      'ViolationID',
+      'StudentID',
+      'ExamID',
+      'SessionID',
+      'Type',
+      'Severity',
+      'Timestamp',
+      'Description',
+      'Device',
+      'AppVersion',
+      'Status',
+      'CreatedAt'
+    ],
+
+    AuditLogs: [
+      'AuditID',
+      'ActorID',
+      'ActorRole',
+      'Action',
+      'TargetID',
+      'ExamID',
+      'Timestamp',
+      'Description'
     ]
   };
 
@@ -1119,7 +1196,7 @@ function getExams(token) {
 
   requireAdmin_(token);
 
-  return clientRows_('Ujian');
+  return clientRows_('Ujian').map(sanitizeExamForClient_);
 }
 
 function createExam(
@@ -1162,7 +1239,9 @@ function createExam(
     );
   }
 
-  return clientSafe_(append_('Ujian', {
+  const antiCheat = buildAntiCheatFields_(data, null);
+
+  return clientSafe_(sanitizeExamForClient_(append_('Ujian', Object.assign({
 
     ExamID: id_('EXM'),
 
@@ -1195,7 +1274,74 @@ function createExam(
 
     CreatedBy:
       admin.Email
-  }));
+  }, antiCheat))));
+}
+
+/* =========================
+   ANTI-CHEAT CONFIG HELPERS (per exam)
+   ========================= */
+
+/**
+ * Konversi checkbox/boolean dari form Admin Guru menjadi 'ON'/'OFF'.
+ * Checkbox HTML yang tidak dicentang tidak mengirim field sama sekali,
+ * jadi field yang benar-benar hilang dianggap OFF, BUKAN memakai default.
+ */
+function onOff_(value, defaultOn) {
+  if (value === undefined) return defaultOn ? 'ON' : 'OFF';
+  const v = String(value).trim().toUpperCase();
+  if (v === 'ON' || v === 'TRUE' || v === '1' || v === 'YES') return 'ON';
+  if (v === 'OFF' || v === 'FALSE' || v === '0' || v === 'NO' || v === '') return 'OFF';
+  return defaultOn ? 'ON' : 'OFF';
+}
+
+/**
+ * existing: baris Ujian yang sudah ada (untuk update, supaya PIN yang tidak
+ * diubah tetap dipertahankan), atau null untuk ujian baru.
+ */
+function buildAntiCheatFields_(data, existing) {
+  const hasPinField = data.SupervisorPin !== undefined;
+  const newPin = String(data.SupervisorPin || '').trim();
+
+  let pinHash = existing ? String(existing.SupervisorPinHash || '') : '';
+  let pinSalt = existing ? String(existing.SupervisorPinSalt || '') : '';
+
+  if (hasPinField && newPin) {
+    if (newPin.length < 4) {
+      throw new Error('PIN Pengawas minimal 4 digit.');
+    }
+    pinSalt = generateSalt_();
+    pinHash = hashPassword_(newPin, pinSalt);
+  }
+
+  const maxViolations = safeNumber_(data.MaxViolations, 3);
+
+  return {
+    AntiCheatOn: onOff_(data.AntiCheatOn, true),
+    ExamLockOn: onOff_(data.ExamLockOn, true),
+    PreventScreenshot: onOff_(data.PreventScreenshot, true),
+    PreventScreenRecording: onOff_(data.PreventScreenRecording, true),
+    PreventCopyPaste: onOff_(data.PreventCopyPaste, true),
+    DetectBackground: onOff_(data.DetectBackground, true),
+    DetectSplitScreen: onOff_(data.DetectSplitScreen, true),
+    MaxViolations: maxViolations > 0 ? maxViolations : 3,
+    ActionAfterLimit: String(data.ActionAfterLimit || 'LOCK').trim().toUpperCase() === 'TERMINATE' ? 'TERMINATE' : 'LOCK',
+    RequireSupervisorPin: onOff_(data.RequireSupervisorPin, true),
+    SupervisorPinHash: pinHash,
+    SupervisorPinSalt: pinSalt
+  };
+}
+
+/**
+ * Data Ujian yang dikirim ke Admin Guru TIDAK BOLEH menyertakan hash/salt
+ * PIN Pengawas. Diganti dengan flag SupervisorPinSet supaya UI tahu
+ * apakah PIN sudah pernah diisi tanpa membocorkan nilainya.
+ */
+function sanitizeExamForClient_(exam) {
+  const out = Object.assign({}, exam);
+  out.SupervisorPinSet = !!String(out.SupervisorPinHash || '');
+  delete out.SupervisorPinHash;
+  delete out.SupervisorPinSalt;
+  return out;
 }
 
 function updateExam(
@@ -1227,11 +1373,20 @@ function updateExam(
     );
   }
 
+  const existing = rows_('Ujian').find(function(e) {
+    return String(e.ExamID) === String(id);
+  });
+  if (!existing) {
+    throw new Error('Ujian tidak ditemukan.');
+  }
+
+  const antiCheat = buildAntiCheatFields_(data, existing);
+
   return updateById_(
     'Ujian',
     'ExamID',
     id,
-    {
+    Object.assign({
 
       NamaUjian:
         String(data.NamaUjian)
@@ -1256,7 +1411,7 @@ function updateExam(
       Status:
         String(data.Status || 'DRAFT')
           .toUpperCase()
-    }
+    }, antiCheat)
   );
 }
 
@@ -2372,6 +2527,179 @@ function deleteAdmin(
   );
 }
 
+/* =========================
+   ADMIN - MONITORING ANTI-CHEAT
+   ========================= */
+
+/**
+ * Dashboard Pengawasan (bagian 11 PRD): daftar siswa per ujian beserta
+ * status sesi dan jumlah pelanggaran.
+ */
+function getExamMonitoring(token, examId) {
+
+  requireAdmin_(token);
+
+  if (!examId) {
+    throw new Error('Ujian wajib dipilih.');
+  }
+
+  const students = Object.fromEntries(
+    rows_('Siswa').map(function(s) { return [String(s.StudentID), s]; })
+  );
+
+  const invitations = rows_('Undangan').filter(function(i) {
+    return String(i.ExamID) === String(examId) &&
+      String(i.Status || '').toUpperCase() !== 'CANCELLED';
+  });
+
+  const sessions = rows_('ExamSessions').filter(function(s) {
+    return String(s.ExamID) === String(examId);
+  });
+
+  const sessionByStudent = {};
+  sessions.forEach(function(s) {
+    // Ambil sesi terakhir per siswa.
+    sessionByStudent[String(s.StudentID)] = s;
+  });
+
+  const rowsOut = invitations.map(function(inv) {
+    const student = students[String(inv.StudentID)] || {};
+    const session = sessionByStudent[String(inv.StudentID)] || null;
+
+    return {
+      StudentID: inv.StudentID,
+      Nama: student.Nama || inv.StudentID,
+      Email: student.Email || '',
+      Kelas: student.Kelas || '',
+      InviteStatus: inv.Status || '',
+      SessionID: session ? session.SessionID : '',
+      SessionStatus: session ? session.Status : 'NOT_STARTED',
+      ViolationCount: session ? safeNumber_(session.ViolationCount, 0) : 0,
+      LastHeartbeat: session ? session.LastHeartbeat : '',
+      StartTime: session ? session.StartTime : ''
+    };
+  });
+
+  const summary = {
+    total: rowsOut.length,
+    active: rowsOut.filter(function(r) { return ['ACTIVE', 'WARNING'].indexOf(r.SessionStatus) >= 0; }).length,
+    locked: rowsOut.filter(function(r) { return r.SessionStatus === 'LOCKED'; }).length,
+    completed: rowsOut.filter(function(r) { return ['SUBMITTED', 'FORCE_SUBMITTED'].indexOf(r.SessionStatus) >= 0; }).length,
+    terminated: rowsOut.filter(function(r) { return r.SessionStatus === 'TERMINATED'; }).length,
+    violations: rowsOut.reduce(function(sum, r) { return sum + (r.ViolationCount || 0); }, 0)
+  };
+
+  return clientSafe_({ summary: summary, students: rowsOut });
+}
+
+function getSessionViolations(token, sessionId) {
+
+  requireAdmin_(token);
+
+  if (!sessionId) throw new Error('SessionID wajib diisi.');
+
+  return clientSafe_(rows_('Violations')
+    .filter(function(v) { return String(v.SessionID) === String(sessionId); })
+    .sort(function(a, b) { return new Date(a.Timestamp) - new Date(b.Timestamp); }));
+}
+
+function lockSession(token, sessionId) {
+
+  const admin = requireAdmin_(token);
+
+  const session = findSession_(sessionId);
+  if (!session) throw new Error('Sesi ujian tidak ditemukan.');
+
+  updateById_('ExamSessions', 'SessionID', sessionId, { Status: 'LOCKED' });
+  auditLog_(admin.AdminID, admin.Role, 'LOCK_STUDENT', sessionId, session.ExamID, 'Sesi dikunci manual oleh ' + admin.Nama + '.');
+
+  return { ok: true };
+}
+
+function unlockSession(token, sessionId) {
+
+  const admin = requireAdmin_(token);
+
+  const session = findSession_(sessionId);
+  if (!session) throw new Error('Sesi ujian tidak ditemukan.');
+
+  if (String(session.Status).toUpperCase() === 'TERMINATED') {
+    throw new Error('Sesi sudah dihentikan dan tidak dapat dibuka kembali.');
+  }
+
+  updateById_('ExamSessions', 'SessionID', sessionId, { Status: 'ACTIVE' });
+  auditLog_(admin.AdminID, admin.Role, 'UNLOCK_STUDENT', sessionId, session.ExamID, 'Sesi dibuka manual oleh ' + admin.Nama + '.');
+
+  return { ok: true };
+}
+
+/**
+ * Force Submit (bagian 13 PRD). Karena jawaban siswa hanya tersimpan di
+ * server saat submit final, Force Submit oleh Guru menutup sesi ujian
+ * dan mencatat hasil TIDAK SELESAI (nilai dari jawaban yang sempat
+ * dikirim tetap tersimpan terpisah jika submit sempat terjadi sebelumnya).
+ */
+function forceSubmitSession(token, sessionId) {
+
+  const admin = requireAdmin_(token);
+
+  const session = findSession_(sessionId);
+  if (!session) throw new Error('Sesi ujian tidak ditemukan.');
+
+  const closed = ['SUBMITTED', 'FORCE_SUBMITTED', 'TERMINATED'];
+  if (closed.indexOf(String(session.Status).toUpperCase()) >= 0) {
+    throw new Error('Sesi ini sudah berakhir.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (!studentAlreadySubmitted_(session.StudentID, session.ExamID)) {
+      appendUnlocked_('Nilai', {
+        ResultID: id_('RES'),
+        ExamID: session.ExamID,
+        StudentID: session.StudentID,
+        Benar: 0,
+        Salah: 0,
+        Nilai: 0,
+        Status: 'FORCE_SUBMITTED',
+        Waktu: now_()
+      });
+
+      const invitation = rows_('Undangan').find(function(i) {
+        return String(i.ExamID) === String(session.ExamID) &&
+          String(i.StudentID) === String(session.StudentID) &&
+          String(i.Status || '').toUpperCase() !== 'CANCELLED';
+      });
+      if (invitation) {
+        updateByIdUnlocked_('Undangan', 'InviteID', invitation.InviteID, { Status: 'COMPLETED' });
+      }
+    }
+
+    updateByIdUnlocked_('ExamSessions', 'SessionID', sessionId, {
+      Status: 'FORCE_SUBMITTED',
+      ActualEndTime: now_()
+    });
+
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+
+  auditLog_(admin.AdminID, admin.Role, 'FORCE_SUBMIT', sessionId, session.ExamID, 'Ujian diakhiri paksa oleh ' + admin.Nama + '.');
+
+  return { ok: true };
+}
+
+function getAuditLogs(token, examId) {
+
+  requireAdmin_(token);
+
+  return clientSafe_(rows_('AuditLogs')
+    .filter(function(a) { return !examId || String(a.ExamID) === String(examId); })
+    .sort(function(a, b) { return new Date(b.Timestamp) - new Date(a.Timestamp); }));
+}
+
 /* =========================================================
    API SISWA ANDROID
    ========================================================= */
@@ -2478,6 +2806,308 @@ function computePersonalDeadline_(startedAt, exam) {
   }
 
   return byDuration;
+}
+
+/* =========================
+   EXAM SESSION (Anti-Cheat)
+   ========================= */
+
+function findSession_(sessionId) {
+  return rows_('ExamSessions').find(function(s) {
+    return String(s.SessionID) === String(sessionId);
+  }) || null;
+}
+
+function findActiveSessionFor_(studentId, examId) {
+  const sessions = rows_('ExamSessions').filter(function(s) {
+    return String(s.StudentID) === String(studentId) &&
+      String(s.ExamID) === String(examId);
+  });
+  // Ambil sesi paling akhir yang dibuat (baris terbawah).
+  return sessions.length ? sessions[sessions.length - 1] : null;
+}
+
+/**
+ * Membuat ExamSession baru untuk percobaan siswa ini kalau belum ada,
+ * atau mengembalikan sesi yang sudah aktif (belum SUBMITTED/TERMINATED)
+ * supaya tutup-buka aplikasi tidak membuat sesi ganda.
+ */
+function ensureExamSession_(student, exam, invitation, deadline) {
+  const existing = findActiveSessionFor_(student.StudentID, exam.ExamID);
+
+  const closedStates = ['SUBMITTED', 'FORCE_SUBMITTED', 'TERMINATED', 'EXPIRED'];
+
+  if (existing && closedStates.indexOf(String(existing.Status || '').toUpperCase()) < 0) {
+    return existing;
+  }
+
+  const session = {
+    SessionID: id_('SES'),
+    ExamID: exam.ExamID,
+    StudentID: student.StudentID,
+    InviteID: invitation.InviteID,
+    StartTime: now_(),
+    ExpectedEndTime: deadline,
+    ActualEndTime: '',
+    Status: 'ACTIVE',
+    ViolationCount: 0,
+    LastHeartbeat: now_(),
+    DeviceInfo: '',
+    AppVersion: '',
+    CreatedAt: now_()
+  };
+
+  return append_('ExamSessions', session);
+}
+
+function examAntiCheatConfig_(exam) {
+  return {
+    antiCheatOn: String(exam.AntiCheatOn || 'ON').toUpperCase() !== 'OFF',
+    examLockOn: String(exam.ExamLockOn || 'ON').toUpperCase() !== 'OFF',
+    preventScreenshot: String(exam.PreventScreenshot || 'ON').toUpperCase() !== 'OFF',
+    preventScreenRecording: String(exam.PreventScreenRecording || 'ON').toUpperCase() !== 'OFF',
+    preventCopyPaste: String(exam.PreventCopyPaste || 'ON').toUpperCase() !== 'OFF',
+    detectBackground: String(exam.DetectBackground || 'ON').toUpperCase() !== 'OFF',
+    detectSplitScreen: String(exam.DetectSplitScreen || 'ON').toUpperCase() !== 'OFF',
+    maxViolations: safeNumber_(exam.MaxViolations, 3) || 3,
+    actionAfterLimit: String(exam.ActionAfterLimit || 'LOCK').toUpperCase() === 'TERMINATE' ? 'TERMINATE' : 'LOCK',
+    requireSupervisorPin: String(exam.RequireSupervisorPin || 'ON').toUpperCase() !== 'OFF'
+  };
+}
+
+function auditLog_(actorId, actorRole, action, targetId, examId, description) {
+  try {
+    append_('AuditLogs', {
+      AuditID: id_('A'),
+      ActorID: actorId || '',
+      ActorRole: actorRole || '',
+      Action: action || '',
+      TargetID: targetId || '',
+      ExamID: examId || '',
+      Timestamp: now_(),
+      Description: description || ''
+    });
+  } catch (err) {
+    // Audit log tidak boleh menggagalkan aksi utama.
+  }
+}
+
+/**
+ * Rules Engine sederhana (bagian 19 PRD):
+ * 0 pelanggaran -> ACTIVE, 1..(max-1) -> WARNING, >= max -> policy Guru.
+ */
+function nextStatusAfterViolation_(currentStatus, violationCount, exam) {
+  const closed = ['SUBMITTED', 'FORCE_SUBMITTED', 'TERMINATED', 'EXPIRED'];
+  if (closed.indexOf(String(currentStatus || '').toUpperCase()) >= 0) {
+    return String(currentStatus).toUpperCase();
+  }
+
+  const max = safeNumber_(exam.MaxViolations, 3) || 3;
+
+  if (violationCount >= max) {
+    const action = String(exam.ActionAfterLimit || 'LOCK').toUpperCase();
+    return action === 'TERMINATE' ? 'TERMINATED' : 'LOCKED';
+  }
+
+  if (violationCount > 0) return 'WARNING';
+  return 'ACTIVE';
+}
+
+/* =========================
+   API SISWA — VIOLATION / HEARTBEAT / UNLOCK
+   ========================= */
+
+function reportViolationApi_(data) {
+  const email = String(data.email || '').trim().toLowerCase();
+  const examId = String(data.examId || '').trim();
+  const sessionId = String(data.sessionId || '').trim();
+  const type = String(data.type || '').trim().toUpperCase();
+  const severity = String(data.severity || 'WARNING').trim().toUpperCase();
+  const description = String(data.description || '').trim();
+  const device = String(data.device || '').trim();
+  const appVersion = String(data.appVersion || '').trim();
+
+  const student = findStudentByEmail_(email);
+  if (!student) return { ok: false, message: 'Siswa tidak ditemukan.' };
+  if (!examId || !sessionId || !type) {
+    return { ok: false, message: 'examId, sessionId, dan type wajib diisi.' };
+  }
+
+  const exam = rows_('Ujian').find(function(e) { return String(e.ExamID) === examId; });
+  if (!exam) return { ok: false, message: 'Ujian tidak ditemukan.' };
+
+  const session = findSession_(sessionId);
+  if (!session || String(session.StudentID) !== String(student.StudentID) ||
+      String(session.ExamID) !== examId) {
+    return { ok: false, message: 'Sesi ujian tidak valid.' };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    append_('Violations', {
+      ViolationID: id_('V'),
+      StudentID: student.StudentID,
+      ExamID: examId,
+      SessionID: sessionId,
+      Type: type,
+      Severity: severity,
+      Timestamp: now_(),
+      Description: description,
+      Device: device,
+      AppVersion: appVersion,
+      Status: 'RECORDED',
+      CreatedAt: now_()
+    });
+
+    const freshSession = findSession_(sessionId);
+    const newCount = safeNumber_(freshSession.ViolationCount, 0) + 1;
+    const newStatus = nextStatusAfterViolation_(freshSession.Status, newCount, exam);
+
+    updateByIdUnlocked_('ExamSessions', 'SessionID', sessionId, {
+      ViolationCount: newCount,
+      Status: newStatus,
+      LastHeartbeat: now_()
+    });
+    SpreadsheetApp.flush();
+
+    return {
+      ok: true,
+      violationCount: newCount,
+      maxViolations: safeNumber_(exam.MaxViolations, 3) || 3,
+      status: newStatus,
+      requireSupervisorPin: String(exam.RequireSupervisorPin || 'ON').toUpperCase() !== 'OFF'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Batch untuk offline queue: array JSON berisi objek violation yang sama
+ * seperti action 'violation'. Dipakai saat koneksi kembali setelah sempat
+ * terputus supaya event yang tersimpan lokal tidak hilang.
+ */
+function reportViolationBatchApi_(data) {
+  let items = [];
+  try {
+    items = JSON.parse(String(data.items || '[]'));
+  } catch (err) {
+    return { ok: false, message: 'Format batch tidak valid.' };
+  }
+
+  if (!Array.isArray(items) || !items.length) {
+    return { ok: false, message: 'Tidak ada data pelanggaran pada batch ini.' };
+  }
+
+  let lastResult = null;
+  let processed = 0;
+
+  items.forEach(function(item) {
+    const result = reportViolationApi_({
+      email: data.email,
+      examId: item.examId,
+      sessionId: item.sessionId,
+      type: item.type,
+      severity: item.severity,
+      description: item.description,
+      device: item.device,
+      appVersion: item.appVersion
+    });
+    if (result.ok) {
+      processed++;
+      lastResult = result;
+    }
+  });
+
+  return Object.assign({ ok: processed > 0, processed: processed, total: items.length }, lastResult || {});
+}
+
+function heartbeatApi_(data) {
+  const email = String(data.email || '').trim().toLowerCase();
+  const examId = String(data.examId || '').trim();
+  const sessionId = String(data.sessionId || '').trim();
+  const remainingSeconds = safeNumber_(data.remainingSeconds, -1);
+  const appState = String(data.appState || '').trim();
+
+  const student = findStudentByEmail_(email);
+  if (!student) return { ok: false, message: 'Siswa tidak ditemukan.' };
+
+  const session = findSession_(sessionId);
+  if (!session || String(session.StudentID) !== String(student.StudentID) ||
+      String(session.ExamID) !== examId) {
+    return { ok: false, message: 'Sesi ujian tidak valid.' };
+  }
+
+  updateByIdUnlocked_('ExamSessions', 'SessionID', sessionId, {
+    LastHeartbeat: now_()
+  });
+  SpreadsheetApp.flush();
+
+  // Heartbeat HANYA sinkronisasi status; tidak dipakai sebagai satu-satunya
+  // bukti kecurangan (lihat bagian 15 PRD).
+  return {
+    ok: true,
+    status: session.Status,
+    violationCount: safeNumber_(session.ViolationCount, 0)
+  };
+}
+
+function getSessionStatusApi_(data) {
+  const sessionId = String(data.sessionId || '').trim();
+  const session = findSession_(sessionId);
+  if (!session) return { ok: false, message: 'Sesi ujian tidak ditemukan.' };
+  return { ok: true, status: session.Status, violationCount: safeNumber_(session.ViolationCount, 0) };
+}
+
+/**
+ * Siswa memasukkan PIN Pengawas pada dialog "UJIAN DIKUNCI" di Android.
+ * PIN diverifikasi terhadap hash tersimpan pada Ujian (bukan plaintext).
+ */
+function unlockSessionWithPinApi_(data) {
+  const email = String(data.email || '').trim().toLowerCase();
+  const examId = String(data.examId || '').trim();
+  const sessionId = String(data.sessionId || '').trim();
+  const pin = String(data.pin || '').trim();
+
+  const student = findStudentByEmail_(email);
+  if (!student) return { ok: false, message: 'Siswa tidak ditemukan.' };
+
+  const exam = rows_('Ujian').find(function(e) { return String(e.ExamID) === examId; });
+  if (!exam) return { ok: false, message: 'Ujian tidak ditemukan.' };
+
+  const session = findSession_(sessionId);
+  if (!session || String(session.StudentID) !== String(student.StudentID) ||
+      String(session.ExamID) !== examId) {
+    return { ok: false, message: 'Sesi ujian tidak valid.' };
+  }
+
+  if (String(session.Status).toUpperCase() === 'TERMINATED') {
+    return { ok: false, message: 'Ujian sudah dihentikan dan tidak dapat dibuka kembali.' };
+  }
+
+  if (String(session.Status).toUpperCase() !== 'LOCKED') {
+    return { ok: true, status: session.Status, message: 'Sesi tidak dalam status terkunci.' };
+  }
+
+  const pinHash = String(exam.SupervisorPinHash || '');
+  const pinSalt = String(exam.SupervisorPinSalt || '');
+
+  if (!pinHash) {
+    return { ok: false, message: 'PIN Pengawas belum diatur oleh Guru untuk ujian ini.' };
+  }
+
+  if (!pin || hashPassword_(pin, pinSalt) !== pinHash) {
+    auditLog_(student.StudentID, 'STUDENT', 'UNLOCK_ATTEMPT_FAILED', session.SessionID, examId, 'PIN Pengawas salah.');
+    return { ok: false, message: 'PIN Pengawas salah.' };
+  }
+
+  updateByIdUnlocked_('ExamSessions', 'SessionID', sessionId, { Status: 'ACTIVE' });
+  SpreadsheetApp.flush();
+
+  auditLog_(student.StudentID, 'SUPERVISOR', 'UNLOCK_STUDENT', session.SessionID, examId, 'Sesi dibuka kembali dengan PIN Pengawas.');
+
+  return { ok: true, status: 'ACTIVE', message: 'Ujian dibuka kembali.' };
 }
 
 function studentAlreadySubmitted_(
@@ -2981,6 +3611,22 @@ function getStudentQuestionsApi_(data) {
     };
   }
 
+  // Anti-Cheat: buat/ambil ExamSession untuk percobaan ini. Kalau sesi
+  // sebelumnya sudah dikunci/diterminasi oleh sistem/Guru, siswa tidak
+  // otomatis mendapat sesi baru yang bersih.
+  const session = ensureExamSession_(student, exam, invitation, deadline);
+  const sessionStatusUpper = String(session.Status || '').toUpperCase();
+
+  if (sessionStatusUpper === 'TERMINATED') {
+    return {
+      ok: false,
+      message: 'Ujian Anda telah dihentikan oleh sistem/pengawas. Jawaban terakhir telah disimpan.',
+      data: [],
+      sessionId: session.SessionID,
+      sessionStatus: sessionStatusUpper
+    };
+  }
+
   const questions =
     // Diacak dengan seed StudentID+ExamID: urutan berbeda antar siswa,
     // tapi tetap konsisten jika siswa yang sama memuat ulang soal ini.
@@ -3034,7 +3680,21 @@ function getStudentQuestionsApi_(data) {
       remainingSeconds,
 
     deadline:
-      deadline
+      deadline,
+
+    // Anti-Cheat & Exam Proctoring: session + config dikirim bersama soal
+    // supaya Android dapat langsung mengaktifkan Exam Lock/monitoring.
+    sessionId:
+      session.SessionID,
+
+    sessionStatus:
+      sessionStatusUpper,
+
+    violationCount:
+      safeNumber_(session.ViolationCount, 0),
+
+    antiCheat:
+      examAntiCheatConfig_(exam)
   };
 }
 
@@ -3067,6 +3727,19 @@ function submitStudentExamApi_(data) {
   const invitation = findInvitation_(student.StudentID, examId);
   if (!invitation) {
     return { ok: false, message: 'Anda tidak memiliki undangan untuk ujian ini.' };
+  }
+
+  // Anti-Cheat: sesi yang sedang terkunci wajib dibuka dengan PIN Pengawas
+  // dulu sebelum jawaban dapat dikirim.
+  const antiCheatSession = findActiveSessionFor_(student.StudentID, examId);
+  if (antiCheatSession) {
+    const st = String(antiCheatSession.Status || '').toUpperCase();
+    if (st === 'LOCKED') {
+      return { ok: false, message: 'Ujian sedang terkunci. Masukkan PIN Pengawas untuk melanjutkan.' };
+    }
+    if (st === 'TERMINATED') {
+      return { ok: false, message: 'Ujian ini telah dihentikan oleh sistem/pengawas.' };
+    }
   }
 
   // Kalau siswa ini sudah punya waktu mulai tercatat (dari saat ambil
@@ -3176,6 +3849,16 @@ function submitStudentExamApi_(data) {
     if (invitation) {
       updateByIdUnlocked_('Undangan', 'InviteID', invitation.InviteID, {
         Status: 'COMPLETED'
+      });
+    }
+
+    // Tutup ExamSession terkait (Anti-Cheat) supaya dashboard monitoring
+    // Guru menampilkan status akhir yang benar.
+    const session = findActiveSessionFor_(student.StudentID, examId);
+    if (session && ['SUBMITTED', 'FORCE_SUBMITTED', 'TERMINATED'].indexOf(String(session.Status || '').toUpperCase()) < 0) {
+      updateByIdUnlocked_('ExamSessions', 'SessionID', session.SessionID, {
+        Status: 'SUBMITTED',
+        ActualEndTime: now_()
       });
     }
 

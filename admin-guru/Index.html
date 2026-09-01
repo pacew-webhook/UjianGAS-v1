@@ -50,6 +50,7 @@
       <button data-page="dashboard" onclick="page('dashboard')">📊 <span>Dashboard</span></button>
       <button data-page="students" onclick="page('students')">👨‍🎓 <span>Siswa</span></button>
       <button data-page="exams" onclick="page('exams')">📝 <span>Ujian</span></button>
+      <button data-page="monitoring" onclick="page('monitoring')">🛡️ <span>Monitoring</span></button>
       <button data-page="questions" onclick="page('questions')">❓ <span>Bank Soal</span></button>
       <button data-page="invite" onclick="page('invite')">✉️ <span>Undangan</span></button>
       <button data-page="results" onclick="page('results')">🏆 <span>Hasil</span></button>
@@ -82,6 +83,15 @@
         <div class="page-head"><div><div class="eyebrow">UJIAN</div><h1>Daftar Ujian</h1><p class="muted">Buat dan atur jadwal ujian.</p></div><button class="primary" onclick="openExamModal()">＋ Buat Ujian</button></div>
         <div class="toolbar"><input id="examSearch" class="search" placeholder="Cari ujian atau mapel…" oninput="renderExams()"><select id="examStatusFilter" onchange="renderExams()"><option value="">Semua status</option><option>DRAFT</option><option>PUBLISHED</option><option>CLOSED</option></select></div>
         <div id="examsList"></div>
+      </section>
+
+      <section id="monitoring" class="page">
+        <div class="page-head"><div><div class="eyebrow">ANTI-CHEAT</div><h1>Monitoring Ujian</h1><p class="muted">Pantau status siswa, pelanggaran, dan kunci/buka ujian secara langsung.</p></div><button class="ghost" onclick="loadMonitoring()">↻ Refresh</button></div>
+        <div class="toolbar"><select id="monitorExam" onchange="loadMonitoring()"></select></div>
+        <div class="cards" id="monitorSummaryCards"></div>
+        <div id="monitorTable" class="table-wrap"></div>
+        <div class="panel-head" style="margin-top:22px"><h3>Audit Log</h3><button class="ghost" onclick="loadAuditLogs()">↻</button></div>
+        <div id="auditLogList"></div>
       </section>
 
       <section id="questions" class="page">
@@ -230,7 +240,7 @@ function page(id) {
   document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.sidebar button').forEach(x => x.classList.toggle('active', x.dataset.page === id));
   $(id).classList.add('active');
-  const loaders = {dashboard,students:loadStudents,exams:loadExams,questions:questions,invite:invite,results:results,reminders:loadReminders,admins:loadAdmins};
+  const loaders = {dashboard,students:loadStudents,exams:loadExams,monitoring:monitoring,questions:questions,invite:invite,results:results,reminders:loadReminders,admins:loadAdmins};
   if (loaders[id]) loaders[id]();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -278,9 +288,102 @@ async function ensureExamsLoaded_(showBusy=true){
   }
 }
 function renderExams(){const q=($('examSearch')?.value||'').toLowerCase(),st=$('examStatusFilter')?.value||'';const data=list_(EXAMS).filter(x=>(!st||String(x.Status).toUpperCase()===st)&&[x.NamaUjian,x.Mapel].join(' ').toLowerCase().includes(q));$('examsList').innerHTML=data.length?data.map(e=>`<div class="item-card"><div class="item-top"><div><h3>${esc(e.NamaUjian)}</h3><div class="meta">${esc(e.Mapel||'Tanpa mapel')} • ${esc(e.DurasiMenit)} menit</div><div class="meta">📅 ${esc(e.Tanggal)} • ${esc(e.JamMulai)} – ${esc(e.JamSelesai)}</div></div><div>${statusBadge(e.Status)}</div></div><div class="item-actions"><button class="small-btn" onclick="openExamModal('${esc(e.ExamID)}')">Edit</button><button class="small-btn" onclick="page('questions');setTimeout(()=>{if($('questionExamFilter')){$('questionExamFilter').value='${esc(e.ExamID)}';loadQuestions()}},150)">Kelola Soal</button><button class="danger-btn" onclick="removeExam('${esc(e.ExamID)}')">Hapus</button></div></div>`).join(''):empty('Belum ada ujian.');}
-function openExamModal(id=''){const e=EXAMS.find(x=>String(x.ExamID)===String(id))||{};openModal(`<h2 class="modal-title">${id?'Edit Ujian':'Buat Ujian'}</h2><form id="examForm" class="modal-form"><label>Nama Ujian<input name="NamaUjian" value="${esc(e.NamaUjian||'')}" required></label><div class="form-grid"><label>Mapel<input name="Mapel" value="${esc(e.Mapel||'')}" placeholder="Matematika"></label><label>Durasi (menit)<input type="number" name="DurasiMenit" min="1" value="${esc(e.DurasiMenit||60)}" required></label><label>Tanggal<input type="date" name="Tanggal" value="${esc(formatDateInput(e.Tanggal))}" required></label><label>Status<select name="Status"><option ${String(e.Status||'DRAFT').toUpperCase()==='DRAFT'?'selected':''}>DRAFT</option><option ${String(e.Status||'').toUpperCase()==='PUBLISHED'?'selected':''}>PUBLISHED</option><option ${String(e.Status||'').toUpperCase()==='CLOSED'?'selected':''}>CLOSED</option></select></label><label>Jam Mulai<input type="time" name="JamMulai" value="${esc(formatTimeInput(e.JamMulai))}" required></label><label>Jam Selesai<input type="time" name="JamSelesai" value="${esc(formatTimeInput(e.JamSelesai))}" required></label></div><div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div></form>`);$('examForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const d=Object.fromEntries(new FormData(ev.target));if(id)await call('updateExam',TOKEN,id,d);else await call('createExam',TOKEN,d);closeModal();toast('Ujian tersimpan.');await loadExams();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};}
+function acCheck_(name,label,checked){return `<label class="check-row"><input type="checkbox" name="${name}" ${checked?'checked':''}> <span>${label}</span></label>`;}
+function onVal_(e,field,def){return e && e[field]!==undefined ? String(e[field]).toUpperCase()!=='OFF' : def;}
+function openExamModal(id=''){
+  const e=EXAMS.find(x=>String(x.ExamID)===String(id))||{};
+  openModal(`<h2 class="modal-title">${id?'Edit Ujian':'Buat Ujian'}</h2><form id="examForm" class="modal-form">
+    <label>Nama Ujian<input name="NamaUjian" value="${esc(e.NamaUjian||'')}" required></label>
+    <div class="form-grid">
+      <label>Mapel<input name="Mapel" value="${esc(e.Mapel||'')}" placeholder="Matematika"></label>
+      <label>Durasi (menit)<input type="number" name="DurasiMenit" min="1" value="${esc(e.DurasiMenit||60)}" required></label>
+      <label>Tanggal<input type="date" name="Tanggal" value="${esc(formatDateInput(e.Tanggal))}" required></label>
+      <label>Status<select name="Status"><option ${String(e.Status||'DRAFT').toUpperCase()==='DRAFT'?'selected':''}>DRAFT</option><option ${String(e.Status||'').toUpperCase()==='PUBLISHED'?'selected':''}>PUBLISHED</option><option ${String(e.Status||'').toUpperCase()==='CLOSED'?'selected':''}>CLOSED</option></select></label>
+      <label>Jam Mulai<input type="time" name="JamMulai" value="${esc(formatTimeInput(e.JamMulai))}" required></label>
+      <label>Jam Selesai<input type="time" name="JamSelesai" value="${esc(formatTimeInput(e.JamSelesai))}" required></label>
+    </div>
+    <h3 style="margin:6px 0 0">🛡️ Anti-Cheat & Exam Proctoring</h3>
+    <div class="form-grid">
+      ${acCheck_('AntiCheatOn','Aktifkan Anti-Cheat',onVal_(e,'AntiCheatOn',true))}
+      ${acCheck_('ExamLockOn','Exam Lock (Full Screen)',onVal_(e,'ExamLockOn',true))}
+      ${acCheck_('PreventScreenshot','Cegah Screenshot',onVal_(e,'PreventScreenshot',true))}
+      ${acCheck_('PreventScreenRecording','Cegah Screen Recording',onVal_(e,'PreventScreenRecording',true))}
+      ${acCheck_('PreventCopyPaste','Cegah Copy/Paste',onVal_(e,'PreventCopyPaste',true))}
+      ${acCheck_('DetectBackground','Deteksi App Background',onVal_(e,'DetectBackground',true))}
+      ${acCheck_('DetectSplitScreen','Deteksi Split Screen',onVal_(e,'DetectSplitScreen',true))}
+      ${acCheck_('RequireSupervisorPin','Wajib PIN Pengawas untuk Unlock',onVal_(e,'RequireSupervisorPin',true))}
+    </div>
+    <div class="form-grid">
+      <label>Maksimal Pelanggaran<input type="number" name="MaxViolations" min="1" value="${esc(e.MaxViolations||3)}"></label>
+      <label>Aksi Setelah Batas<select name="ActionAfterLimit"><option value="LOCK" ${String(e.ActionAfterLimit||'LOCK').toUpperCase()!=='TERMINATE'?'selected':''}>Kunci Ujian (Lock)</option><option value="TERMINATE" ${String(e.ActionAfterLimit||'').toUpperCase()==='TERMINATE'?'selected':''}>Hentikan Ujian (Terminate)</option></select></label>
+    </div>
+    <label>PIN Pengawas ${e.SupervisorPinSet?'<span class="hint">Sudah diatur. Kosongkan jika tidak diubah.</span>':'<span class="hint">Contoh: 4-6 digit. Dipakai siswa untuk membuka ujian yang terkunci.</span>'}<input type="password" name="SupervisorPin" minlength="4" placeholder="${e.SupervisorPinSet?'••••••':'Contoh: 135790'}"></label>
+    <div class="modal-actions"><button type="button" class="ghost" onclick="closeModal()">Batal</button><button class="primary">Simpan</button></div>
+  </form>`);
+  $('examForm').onsubmit=async ev=>{ev.preventDefault();try{busy(true);const fd=new FormData(ev.target);const d=Object.fromEntries(fd);['AntiCheatOn','ExamLockOn','PreventScreenshot','PreventScreenRecording','PreventCopyPaste','DetectBackground','DetectSplitScreen','RequireSupervisorPin'].forEach(k=>{d[k]=fd.has(k)?'ON':'OFF';});if(id)await call('updateExam',TOKEN,id,d);else await call('createExam',TOKEN,d);closeModal();toast('Ujian tersimpan.');await loadExams();await dashboard();}catch(err){toast(msg(err));}finally{busy(false);}};
+}
 async function removeExam(id){if(!confirm('Hapus ujian ini? Data soal dan hasil yang terkait tidak ikut dihapus otomatis.'))return;try{busy(true);await call('deleteExam',TOKEN,id);toast('Ujian dihapus.');await loadExams();await dashboard();}catch(e){toast(msg(e));}finally{busy(false);}}
-function fillExamSelects(){const opts=(all='Semua ujian')=>`<option value="">${all}</option>`+list_(EXAMS).map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('');if($('questionExamFilter'))$('questionExamFilter').innerHTML=opts();if($('inviteExam'))$('inviteExam').innerHTML=opts('Pilih ujian');if($('resultExam'))$('resultExam').innerHTML=opts();if($('reminderExamFilter'))$('reminderExamFilter').innerHTML=opts();}
+function fillExamSelects(){const opts=(all='Semua ujian')=>`<option value="">${all}</option>`+list_(EXAMS).map(e=>`<option value="${esc(e.ExamID)}">${esc(e.NamaUjian)}</option>`).join('');if($('questionExamFilter'))$('questionExamFilter').innerHTML=opts();if($('inviteExam'))$('inviteExam').innerHTML=opts('Pilih ujian');if($('resultExam'))$('resultExam').innerHTML=opts();if($('reminderExamFilter'))$('reminderExamFilter').innerHTML=opts();if($('monitorExam')){const keep=$('monitorExam').value;$('monitorExam').innerHTML=opts('Pilih ujian');if(keep)$('monitorExam').value=keep;}}
+
+/* MONITORING ANTI-CHEAT */
+let MONITOR_STUDENTS = [];
+async function monitoring(){try{if(!EXAMS.length)await loadExams();fillExamSelects();if($('monitorExam').value)await loadMonitoring();else{$('monitorSummaryCards').innerHTML='';$('monitorTable').innerHTML=empty('Pilih ujian untuk melihat monitoring.');$('auditLogList').innerHTML='';}}catch(e){toast(msg(e));}}
+async function loadMonitoring(){
+  const examId=$('monitorExam')?.value||'';
+  if(!examId){$('monitorSummaryCards').innerHTML='';$('monitorTable').innerHTML=empty('Pilih ujian untuk melihat monitoring.');return;}
+  try{
+    const r=await call('getExamMonitoring',TOKEN,examId);
+    const summary=r.summary||{};
+    MONITOR_STUDENTS=list_(r.students);
+    $('monitorSummaryCards').innerHTML=`
+      <div class="stat-card"><div class="stat-icon">👥</div><div><span>Total Siswa</span><b>${summary.total||0}</b></div></div>
+      <div class="stat-card"><div class="stat-icon">🟢</div><div><span>Sedang Ujian</span><b>${summary.active||0}</b></div></div>
+      <div class="stat-card"><div class="stat-icon">🔒</div><div><span>Terkunci</span><b>${summary.locked||0}</b></div></div>
+      <div class="stat-card"><div class="stat-icon">⛔</div><div><span>Dihentikan</span><b>${summary.terminated||0}</b></div></div>`;
+    renderMonitorTable();
+    await loadAuditLogs();
+  }catch(e){toast(msg(e));}
+}
+function sessionStatusLabel_(s){
+  const map={NOT_STARTED:'Belum Mulai',ACTIVE:'🟢 Aman',WARNING:'🟡 Warning',LOCKED:'🔴 Locked',SUBMITTED:'✅ Selesai',FORCE_SUBMITTED:'✅ Force Submit',TERMINATED:'⛔ Terminated',EXPIRED:'⏱️ Expired'};
+  return map[s]||s||'-';
+}
+function renderMonitorTable(){
+  $('monitorTable').innerHTML=MONITOR_STUDENTS.length?`<table><thead><tr><th>Siswa</th><th>Status</th><th>Pelanggaran</th><th>Heartbeat Terakhir</th><th>Aksi</th></tr></thead><tbody>${MONITOR_STUDENTS.map(s=>`<tr><td><b>${esc(s.Nama)}</b><br><span class="meta">${esc(s.Kelas||'')} • ${esc(s.Email||'')}</span></td><td>${esc(sessionStatusLabel_(s.SessionStatus))}</td><td>${esc(s.ViolationCount||0)}</td><td>${esc(formatDateTime(s.LastHeartbeat))}</td><td class="actions">${s.SessionID?`<button class="small-btn" onclick="openStudentSessionModal('${esc(s.StudentID)}')">Detail</button>`:''}</td></tr>`).join('')}</tbody></table>`:empty('Belum ada siswa dengan undangan untuk ujian ini.');
+}
+async function openStudentSessionModal(studentId){
+  const s=MONITOR_STUDENTS.find(x=>String(x.StudentID)===String(studentId));
+  if(!s||!s.SessionID){toast('Siswa ini belum memulai ujian.');return;}
+  try{
+    busy(true);
+    const violations=await call('getSessionViolations',TOKEN,s.SessionID);
+    busy(false);
+    const list=list_(violations);
+    openModal(`<h2 class="modal-title">${esc(s.Nama)}</h2>
+      <p class="meta">Status: <b>${esc(sessionStatusLabel_(s.SessionStatus))}</b> • Pelanggaran: <b>${esc(s.ViolationCount||0)}</b></p>
+      <div style="max-height:260px;overflow:auto;margin:12px 0">${list.length?list.map(v=>`<div class="item-card" style="margin-bottom:8px"><b>${esc(v.Type)}</b> <span class="meta">(${esc(v.Severity)})</span><div class="meta">${esc(formatDateTime(v.Timestamp))}</div>${v.Description?`<div class="meta">${esc(v.Description)}</div>`:''}</div>`).join(''):empty('Belum ada pelanggaran tercatat.')}</div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" onclick="closeModal()">Tutup</button>
+        <button type="button" class="primary" onclick="sessionAction_('unlockSession','${esc(s.SessionID)}','Sesi dibuka.')">🔓 Unlock</button>
+        <button type="button" class="danger-btn" onclick="sessionAction_('lockSession','${esc(s.SessionID)}','Sesi dikunci.')">🔒 Lock</button>
+        <button type="button" class="danger-btn" onclick="forceSubmitConfirm_('${esc(s.SessionID)}')">⏹️ Force Submit</button>
+      </div>`);
+  }catch(e){busy(false);toast(msg(e));}
+}
+async function sessionAction_(fn,sessionId,successText){
+  try{busy(true);await call(fn,TOKEN,sessionId);toast(successText);closeModal();await loadMonitoring();}catch(e){toast(msg(e));}finally{busy(false);}
+}
+function forceSubmitConfirm_(sessionId){
+  if(!confirm('Apakah Anda yakin ingin mengakhiri ujian siswa ini? Jawaban yang belum dikirim akan hilang.'))return;
+  sessionAction_('forceSubmitSession',sessionId,'Ujian siswa diakhiri paksa.');
+}
+async function loadAuditLogs(){
+  try{
+    const examId=$('monitorExam')?.value||'';
+    const data=list_(await call('getAuditLogs',TOKEN,examId));
+    $('auditLogList').innerHTML=data.length?data.slice(0,30).map(a=>`<div class="item-card"><b>${esc(a.Action)}</b> <span class="meta">oleh ${esc(a.ActorRole)}</span><div class="meta">${esc(formatDateTime(a.Timestamp))} • ${esc(a.Description||'')}</div></div>`).join(''):empty('Belum ada aktivitas audit.');
+  }catch(e){toast(msg(e));}
+}
 
 /* QUESTIONS */
 async function questions(){try{await ensureExamsLoaded_(false);fillExamSelects();await loadQuestions();}catch(e){toast(msg(e));}}
