@@ -5,7 +5,17 @@
         android:label="Ujian GAS"
         android:allowBackup="true"
         android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <!--
+          screenOrientation="portrait": mengunci rotasi selama aplikasi berjalan
+          (termasuk saat ujian). Ini mencegah recreate Activity akibat rotasi
+          layar salah terdeteksi sebagai APP_BACKGROUND oleh Anti-Cheat
+          (PRD_UjianGAS_AntiCheat_Exam_Proctoring.md bagian 6.3).
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
