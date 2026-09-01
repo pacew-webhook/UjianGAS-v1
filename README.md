@@ -119,7 +119,7 @@ Status per revisi terbaru:
 
 ## Riwayat revisi
 
-- **Revisi keamanan & anti-contek (terbaru):**
+- **Revisi keamanan & anti-contek:**
   - Tambah kolom `Salt` di sheet `Admin` dan `Siswa`, kolom `MulaiPada` di sheet `Undangan` (otomatis dibuat ulang oleh `setupDatabase()`).
   - Tambah fungsi `generateSalt_`, `hashPassword_`, `verifyPassword_`, `migratePasswordIfNeeded_` di `Code.gs`.
   - Tambah fungsi `parseExamDateTime_`, `getExamWindow_`, `isExamWithinWindow_` di `Code.gs` untuk validasi jam ujian di server.
@@ -128,6 +128,14 @@ Status per revisi terbaru:
   - `getStudentQuestionsApi_` kini mewajibkan parameter `email`, memvalidasi undangan, mencatat/menghitung waktu, dan mengembalikan soal dalam urutan teracak per siswa beserta `remainingSeconds`.
   - `submitStudentExamApi_` menolak submit yang melewati batas waktu pribadi siswa (dengan toleransi jaringan 60 detik).
   - `MainActivity.kt`: pemanggilan endpoint `questions` diperbarui untuk menyertakan `email`; timer ujian kini disinkronkan dari `remainingSeconds` milik server pada setiap pemuatan soal, bukan dihitung ulang dari durasi lokal.
+
+- **Revisi konfirmasi kirim jawaban:**
+  - `MainActivity.kt`: tombol "Kirim Jawaban" (yang menggantikan "Berikutnya" di soal terakhir) tidak lagi langsung mengirim — muncul dialog konfirmasi (`confirmSubmitExam`) yang menyebutkan jumlah soal yang belum dijawab sebelum benar-benar submit. Mencegah submit tidak sengaja karena siswa mengira masih menekan tombol "Berikutnya".
+
+- **Revisi cegah kerjakan-ulang ujian yang sudah dikumpulkan (terbaru):**
+  - `getStudentExamsApi_` sekarang menyertakan `completed` dan `nilai` per ujian (dicek dari sheet `Nilai`), sehingga daftar ujian di Android bisa membedakan ujian yang belum dan sudah dikumpulkan.
+  - `getStudentQuestionsApi_` menolak lebih awal (sebelum soal dikirim) kalau ujian itu sudah pernah dikumpulkan siswa tersebut — sebelumnya penolakan baru terjadi saat submit, jadi siswa bisa terlanjur membuka & menjawab ulang soal yang sia-sia.
+  - `MainActivity.kt`: ujian yang sudah selesai ditampilkan dengan ikon ✅, subjudul nilai, dan tidak lagi membuka layar pengerjaan soal — tap-nya mengarah ke menu Hasil & Nilai.
 
 
 ## Import Bank Soal
