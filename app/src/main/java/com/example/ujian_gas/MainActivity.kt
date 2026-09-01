@@ -13,12 +13,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.setPadding
 import androidx.lifecycle.lifecycleScope
+import com.example.ujian_gas.anticheat.AntiCheatConfig
+import com.example.ujian_gas.anticheat.AntiCheatListener
+import com.example.ujian_gas.anticheat.AntiCheatManager
 import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), AntiCheatListener {
     private lateinit var root: LinearLayout
     private var currentEmail = ""
     private var currentName = ""
@@ -33,6 +36,13 @@ class MainActivity : AppCompatActivity() {
     private var examTimer: CountDownTimer? = null
     private var examRemainingMillis = 0L
     private var examTimerText: TextView? = null
+
+    // Anti-Cheat & Exam Proctoring (PRD_UjianGAS_AntiCheat_Exam_Proctoring.md).
+    private val antiCheat by lazy { AntiCheatManager(this, lifecycleScope, this) }
+    private var examSessionId = ""
+    private var examAntiCheatConfig = AntiCheatConfig()
+    private var lockDialog: AlertDialog? = null
+    private var terminatedShown = false
 
     private val navy = Color.parseColor("#14213D")
     private val blue = Color.parseColor("#2563EB")
@@ -61,7 +71,153 @@ class MainActivity : AppCompatActivity() {
         examTimer?.cancel()
         examTimer = null
         examTimerText = null
+        antiCheat.stopSession()
         super.onDestroy()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        antiCheat.onActivityPaused()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        antiCheat.onActivityResumed()
+        antiCheat.checkMultiWindowNow()
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode)
+        antiCheat.onMultiWindowModeChanged(isInMultiWindowMode)
+    }
+
+    /* =========================
+       AntiCheatListener — reaksi UI terhadap status Anti-Cheat (bagian 18 PRD)
+       ========================= */
+
+    override fun onExamWarning(violationType: String, count: Int, max: Int) {
+        if (!examActive || lockDialog != null) return
+        runOnUiThread {
+            AlertDialog.Builder(this)
+                .setTitle("⚠️ PERINGATAN")
+                .setMessage(
+                    "Anda terdeteksi melakukan pelanggaran ujian ($violationType).\n\n" +
+                        "Pelanggaran: $count / $max\n\n" +
+                        "Tetap berada di aplikasi ujian."
+                )
+                .setPositiveButton("LANJUTKAN", null)
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    override fun onExamLocked() {
+        runOnUiThread { showExamLockedDialog() }
+    }
+
+    override fun onExamTerminated(message: String) {
+        runOnUiThread { showExamTerminated(message) }
+    }
+
+    override fun onExamUnlocked() {
+        runOnUiThread {
+            lockDialog?.dismiss()
+            lockDialog = null
+            toast("Ujian dibuka kembali. Silakan lanjutkan mengerjakan.")
+        }
+    }
+
+    private fun showExamLockedDialog() {
+        if (lockDialog?.isShowing == true) return
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(4))
+        }
+        box.addView(TextView(this).apply {
+            text = "🔒 UJIAN DIKUNCI"
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#DC2626"))
+        })
+        box.addView(TextView(this).apply {
+            text = "Batas pelanggaran telah tercapai.\n\nHubungi pengawas untuk melanjutkan ujian, lalu masukkan PIN Pengawas di bawah ini."
+            textSize = 14f
+            setTextColor(muted)
+        }, lp(top = 10, bottom = 16))
+        val pinInput = modernInput("PIN Pengawas", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+        box.addView(pinInput)
+        val statusText = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#DC2626"))
+        }
+        box.addView(statusText, lp(top = 8))
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(box)
+            .setCancelable(false)
+            .setPositiveButton("BUKA UJIAN", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val pin = pinInput.text.toString().trim()
+                if (pin.isBlank()) {
+                    statusText.text = "PIN Pengawas wajib diisi."
+                    return@setOnClickListener
+                }
+                statusText.text = "Memeriksa PIN..."
+                antiCheat.attemptUnlock(pin) { success, message ->
+                    runOnUiThread {
+                        if (success) {
+                            dialog.dismiss()
+                            lockDialog = null
+                        } else {
+                            statusText.text = message
+                        }
+                    }
+                }
+            }
+        }
+
+        lockDialog = dialog
+        dialog.show()
+    }
+
+    private fun showExamTerminated(message: String) {
+        if (terminatedShown) return
+        terminatedShown = true
+        lockDialog?.dismiss()
+        lockDialog = null
+        examTimer?.cancel()
+        examTimer = null
+        examActive = false
+        antiCheat.stopSession()
+
+        val (scroll, box) = screen()
+        box.gravity = Gravity.CENTER
+        box.addView(TextView(this).apply {
+            text = "⛔ UJIAN DIHENTIKAN"
+            textSize = 22f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#DC2626"))
+        })
+        box.addView(TextView(this).apply {
+            text = "$message\n\nJawaban terakhir yang sempat tersimpan telah diamankan. Hubungi pengawas untuk informasi lebih lanjut."
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(muted)
+        }, lp(top = 10, bottom = 20))
+        box.addView(primaryButton("Kembali ke Menu") {
+            terminatedShown = false
+            activeExam = null
+            examQuestions = JSONArray()
+            examAnswers.clear()
+            examQuestionIndex = 0
+            showHome()
+        })
+        setScreen(scroll, box)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -378,6 +534,10 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 if (!r.optBoolean("ok", true)) {
+                    if (r.optString("sessionStatus") == "TERMINATED") {
+                        showExamTerminated(r.optString("message", "Ujian ini telah dihentikan."))
+                        return@launch
+                    }
                     toast(r.optString("message", "Ujian tidak dapat diakses"))
                     return@launch
                 }
@@ -406,6 +566,24 @@ class MainActivity : AppCompatActivity() {
                 startExamTimerFromServer(r.optLong("remainingSeconds", -1L))
 
                 examActive = true
+                terminatedShown = false
+
+                // Anti-Cheat & Exam Proctoring: aktifkan sesi memakai konfigurasi
+                // yang ditentukan Guru untuk ujian ini (bagian 9 PRD).
+                examSessionId = r.optString("sessionId")
+                examAntiCheatConfig = AntiCheatConfig.fromJson(r.optJSONObject("antiCheat"))
+                if (examSessionId.isNotBlank()) {
+                    antiCheat.startSession(
+                        email = currentEmail,
+                        examId = requestedExamId,
+                        sessionId = examSessionId,
+                        config = examAntiCheatConfig,
+                        initialViolationCount = r.optInt("violationCount", 0),
+                        initialStatus = r.optString("sessionStatus", "ACTIVE"),
+                        remainingSecondsProvider = { examRemainingMillis / 1000L }
+                    )
+                }
+
                 renderExamQuestion()
             } catch (e: Exception) {
                 toast(e.message ?: "Gagal memuat ujian")
@@ -500,6 +678,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(appTextColor)
+            antiCheat.protectFromCopyPaste(this)
         }, lp(top = 7, bottom = 10))
 
         val group = RadioGroup(this)
@@ -513,6 +692,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(appTextColor)
                 setPadding(dp(4), dp(6), 0, dp(6))
                 isChecked = savedAnswer == letter
+                antiCheat.protectFromCopyPaste(this)
             }
             group.addView(rb)
         }
@@ -649,6 +829,7 @@ class MainActivity : AppCompatActivity() {
                     examAnswers.clear()
                     examQuestionIndex = 0
                     examSubmitting = false
+                    antiCheat.stopSession()
                     toast(res.optString("message", "Jawaban berhasil dikirim"))
                     showHome()
                 } else {
