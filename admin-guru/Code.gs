@@ -861,7 +861,31 @@ function updateById_(sheetName, idField, id, data) {
     });
     if (!verified) throw new Error('Data gagal diverifikasi setelah diperbarui: ' + sheetName);
     Object.keys(data).forEach(function(field) {
-      if (Object.prototype.hasOwnProperty.call(data, field) && String(verified[field] == null ? '' : verified[field]) !== String(data[field] == null ? '' : data[field])) {
+      if (!Object.prototype.hasOwnProperty.call(data, field)) return;
+
+      const written = data[field];
+      const read = verified[field];
+
+      // Nilai Date (mis. MulaiPada) mengalami pembulatan sub-detik saat
+      // bolak-balik disimpan sebagai serial number oleh Google Sheets,
+      // sehingga hasil baca ulang bisa berbeda beberapa milidetik/detik
+      // dari nilai yang ditulis walau datanya sebenarnya valid. Untuk
+      // field bertipe Date, bandingkan selisih waktunya (toleransi 5
+      // detik) alih-alih menyamakan representasi string apa adanya —
+      // ini yang sebelumnya memicu error "Perubahan gagal diverifikasi
+      // pada kolom ...".
+      if (written instanceof Date) {
+        const readDate = read instanceof Date ? read : new Date(read);
+        const diffMs = isNaN(readDate.getTime())
+          ? Infinity
+          : Math.abs(readDate.getTime() - written.getTime());
+        if (diffMs > 5000) {
+          throw new Error('Perubahan gagal diverifikasi pada kolom ' + field + '.');
+        }
+        return;
+      }
+
+      if (String(read == null ? '' : read) !== String(written == null ? '' : written)) {
         throw new Error('Perubahan gagal diverifikasi pada kolom ' + field + '.');
       }
     });
