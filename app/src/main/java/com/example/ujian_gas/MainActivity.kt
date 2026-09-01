@@ -1,76 +1,116 @@
 package com.example.ujian_gas
 
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.CountDownTimer
-import android.text.InputType
-import android.view.Gravity
-import android.view.View
-import android.widget.*
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.setPadding
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.example.ujian_gas.anticheat.AntiCheatConfig
 import com.example.ujian_gas.anticheat.AntiCheatListener
 import com.example.ujian_gas.anticheat.AntiCheatManager
-import com.google.android.material.button.MaterialButton
+import com.example.ujian_gas.ui.AppScreen
+import com.example.ujian_gas.ui.ExamListItem
+import com.example.ujian_gas.ui.components.*
+import com.example.ujian_gas.ui.theme.UjianColors
+import com.example.ujian_gas.ui.theme.UjianGasTheme
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
-class MainActivity : AppCompatActivity(), AntiCheatListener {
-    private lateinit var root: LinearLayout
-    private var currentEmail = ""
-    private var currentName = ""
+class MainActivity : ComponentActivity(), AntiCheatListener {
 
-    // State ujian dipertahankan selama sesi ujian.
+    // ------------------------------------------------------------------
+    // State inti (dibaca langsung oleh Compose lewat mutableStateOf).
+    // ------------------------------------------------------------------
+    private var screen by mutableStateOf<AppScreen>(AppScreen.Login)
+    private var currentEmail = ""
+    private var currentName by mutableStateOf("")
+
+    // Ujian aktif.
     private var activeExam: JSONObject? = null
     private var examQuestions = JSONArray()
-    private val examAnswers = mutableMapOf<String, String>()
-    private var examQuestionIndex = 0
+    private val examAnswers = mutableStateMapOf<String, String>()
+    private var examQuestionIndex by mutableStateOf(0)
     private var examSubmitting = false
     private var examActive = false
     private var examTimer: CountDownTimer? = null
-    private var examRemainingMillis = 0L
-    private var examTimerText: TextView? = null
+    private var examRemainingMillis by mutableStateOf(0L)
 
-    // Anti-Cheat & Exam Proctoring (PRD_UjianGAS_AntiCheat_Exam_Proctoring.md).
+    // Daftar untuk layar-layar list.
+    private var listItems by mutableStateOf<List<JSONObject>>(emptyList())
+    private var examListItems by mutableStateOf<List<ExamListItem>>(emptyList())
+    private var listLoading by mutableStateOf(false)
+
+    // Dialog Anti-Cheat.
+    private var warningInfo by mutableStateOf<Triple<String, Int, Int>?>(null)
+    private var lockDialogVisible by mutableStateOf(false)
+    private var lockPinValue by mutableStateOf("")
+    private var lockPinError by mutableStateOf<String?>(null)
+    private var lockChecking by mutableStateOf(false)
+
+    // Dialog konfirmasi kirim jawaban.
+    private var unansweredDialog by mutableStateOf<List<Int>?>(null)
+    private var confirmSubmitVisible by mutableStateOf(false)
+
+    private var terminatedShown = false
+
+    // Anti-Cheat & Exam Proctoring.
     private val antiCheat by lazy { AntiCheatManager(this, lifecycleScope, this) }
     private var examSessionId = ""
     private var examAntiCheatConfig = AntiCheatConfig()
-    private var lockDialog: AlertDialog? = null
-    private var terminatedShown = false
-
-    private val navy = Color.parseColor("#14213D")
-    private val blue = Color.parseColor("#2563EB")
-    private val blueSoft = Color.parseColor("#EFF6FF")
-    private val bg = Color.parseColor("#F6F8FC")
-    private val appTextColor = Color.parseColor("#172033")
-    private val muted = Color.parseColor("#64748B")
-    private val border = Color.parseColor("#E2E8F0")
-    private val white = Color.WHITE
-
-    @Deprecated("Use OnBackInvokedDispatcher on newer Android versions")
-    override fun onBackPressed() {
-        if (examActive) {
-            toast("Selesaikan ujian dengan tombol Sebelumnya, Berikutnya, atau Kirim Jawaban.")
-            return
-        }
-        super.onBackPressed()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        showLogin()
+        enableEdgeToEdge()
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (examActive) {
+                    toast("Selesaikan ujian dengan tombol Sebelumnya, Berikutnya, atau Kirim Jawaban.")
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
+
+        setContent {
+            UjianGasTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = UjianColors.Background) {
+                    AppRoot()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
         examTimer?.cancel()
         examTimer = null
-        examTimerText = null
         antiCheat.stopSession()
         super.onDestroy()
     }
@@ -96,23 +136,16 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
        ========================= */
 
     override fun onExamWarning(violationType: String, count: Int, max: Int) {
-        if (!examActive || lockDialog != null) return
-        runOnUiThread {
-            AlertDialog.Builder(this)
-                .setTitle("⚠️ PERINGATAN")
-                .setMessage(
-                    "Anda terdeteksi melakukan pelanggaran ujian ($violationType).\n\n" +
-                        "Pelanggaran: $count / $max\n\n" +
-                        "Tetap berada di aplikasi ujian."
-                )
-                .setPositiveButton("LANJUTKAN", null)
-                .setCancelable(false)
-                .show()
-        }
+        if (!examActive || lockDialogVisible) return
+        runOnUiThread { warningInfo = Triple(violationType, count, max) }
     }
 
     override fun onExamLocked() {
-        runOnUiThread { showExamLockedDialog() }
+        runOnUiThread {
+            lockPinValue = ""
+            lockPinError = null
+            lockDialogVisible = true
+        }
     }
 
     override fun onExamTerminated(message: String) {
@@ -121,417 +154,297 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
 
     override fun onExamUnlocked() {
         runOnUiThread {
-            lockDialog?.dismiss()
-            lockDialog = null
+            lockDialogVisible = false
             toast("Ujian dibuka kembali. Silakan lanjutkan mengerjakan.")
         }
     }
 
-    private fun showExamLockedDialog() {
-        if (lockDialog?.isShowing == true) return
-
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(20), dp(24), dp(4))
-        }
-        box.addView(TextView(this).apply {
-            text = "🔒 UJIAN DIKUNCI"
-            textSize = 20f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#DC2626"))
-        })
-        box.addView(TextView(this).apply {
-            text = "Batas pelanggaran telah tercapai.\n\nHubungi pengawas untuk melanjutkan ujian, lalu masukkan PIN Pengawas di bawah ini."
-            textSize = 14f
-            setTextColor(muted)
-        }, lp(top = 10, bottom = 16))
-        val pinInput = modernInput("PIN Pengawas", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD)
-        box.addView(pinInput)
-        val statusText = TextView(this).apply {
-            textSize = 13f
-            setTextColor(Color.parseColor("#DC2626"))
-        }
-        box.addView(statusText, lp(top = 8))
-
-        val dialog = AlertDialog.Builder(this)
-            .setView(box)
-            .setCancelable(false)
-            .setPositiveButton("BUKA UJIAN", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val pin = pinInput.text.toString().trim()
-                if (pin.isBlank()) {
-                    statusText.text = "PIN Pengawas wajib diisi."
-                    return@setOnClickListener
-                }
-                statusText.text = "Memeriksa PIN..."
-                antiCheat.attemptUnlock(pin) { success, message ->
-                    runOnUiThread {
-                        if (success) {
-                            dialog.dismiss()
-                            lockDialog = null
-                        } else {
-                            statusText.text = message
-                        }
-                    }
+    // ------------------------------------------------------------------
+    // Root composable: mengatur transisi antar layar.
+    // ------------------------------------------------------------------
+    @Composable
+    private fun AppRoot() {
+        Box(modifier = Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = screen,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "screen"
+            ) { s ->
+                when (s) {
+                    is AppScreen.Login -> LoginScreen()
+                    is AppScreen.Register -> RegisterScreen()
+                    is AppScreen.Home -> HomeScreen()
+                    is AppScreen.SimpleList -> SimpleListScreen(s.header, s.icon, s.emptyText)
+                    is AppScreen.ExamList -> ExamListScreen()
+                    is AppScreen.ExamQuestion -> ExamQuestionScreen()
+                    is AppScreen.Submitting -> SubmittingScreen()
+                    is AppScreen.Terminated -> TerminatedScreen(s.message)
                 }
             }
-        }
 
-        lockDialog = dialog
-        dialog.show()
-    }
-
-    private fun showExamTerminated(message: String) {
-        if (terminatedShown) return
-        terminatedShown = true
-        lockDialog?.dismiss()
-        lockDialog = null
-        examTimer?.cancel()
-        examTimer = null
-        examActive = false
-        antiCheat.stopSession()
-
-        val (scroll, box) = screen()
-        box.gravity = Gravity.CENTER
-        box.addView(TextView(this).apply {
-            text = "⛔ UJIAN DIHENTIKAN"
-            textSize = 22f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#DC2626"))
-        })
-        box.addView(TextView(this).apply {
-            text = "$message\n\nJawaban terakhir yang sempat tersimpan telah diamankan. Hubungi pengawas untuk informasi lebih lanjut."
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(muted)
-        }, lp(top = 10, bottom = 20))
-        box.addView(primaryButton("Kembali ke Menu") {
-            terminatedShown = false
-            activeExam = null
-            examQuestions = JSONArray()
-            examAnswers.clear()
-            examQuestionIndex = 0
-            showHome()
-        })
-        setScreen(scroll, box)
-    }
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-
-    private fun lp(w: Int = LinearLayout.LayoutParams.MATCH_PARENT, h: Int = LinearLayout.LayoutParams.WRAP_CONTENT,
-                   top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams {
-        return LinearLayout.LayoutParams(w, h).apply {
-            topMargin = dp(top)
-            bottomMargin = dp(bottom)
+            warningInfo?.let { (type, count, max) ->
+                WarningDialog(type, count, max)
+            }
+            if (lockDialogVisible) {
+                LockDialog()
+            }
+            unansweredDialog?.let { indexes ->
+                UnansweredDialog(indexes)
+            }
+            if (confirmSubmitVisible) {
+                ConfirmSubmitDialog()
+            }
         }
     }
 
-    private fun shape(color: Int, radius: Int = 18, strokeColor: Int? = null, stroke: Int = 1): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-            if (strokeColor != null) setStroke(dp(stroke), strokeColor)
-        }
+    private fun screenPadding() = Modifier
+        .fillMaxSize()
+        .verticalScroll(rememberScrollState())
+        .padding(horizontal = 20.dp, vertical = 28.dp)
 
-    private fun screen(): Pair<ScrollView, LinearLayout> {
-        val scroll = ScrollView(this).apply {
-            setBackgroundColor(bg)
-            isFillViewport = true
-        }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(28), dp(20), dp(28))
-        }
-        scroll.addView(box)
-        return scroll to box
-    }
+    // ------------------------------------------------------------------
+    // LOGIN
+    // ------------------------------------------------------------------
+    @Composable
+    private fun LoginScreen() {
+        var email by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("") }
+        var loading by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
 
-    private fun setScreen(scroll: ScrollView, box: LinearLayout) {
-        root = box
-        setContentView(scroll)
-    }
-
-    private fun appBrand(box: LinearLayout, subtitle: String) {
-        box.addView(TextView(this).apply {
-            text = "UJIAN"
-            textSize = 13f
-            letterSpacing = 0.12f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(blue)
-        })
-        box.addView(TextView(this).apply {
-            text = "Ujian GAS"
-            textSize = 30f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(navy)
-        }, lp(top = 2))
-        box.addView(TextView(this).apply {
-            text = subtitle
-            textSize = 15f
-            setTextColor(muted)
-            setPadding(0, dp(4), 0, 0)
-        })
-    }
-
-    private fun sectionTitle(value: String, subtitle: String? = null): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        addView(TextView(this@MainActivity).apply {
-            text = value
-            textSize = 28f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(appTextColor)
-        })
-        if (subtitle != null) addView(TextView(this@MainActivity).apply {
-            text = subtitle
-            textSize = 15f
-            setTextColor(muted)
-        }, lp(top = 4))
-    }
-
-    private fun modernInput(hint: String, type: Int = InputType.TYPE_CLASS_TEXT): EditText = EditText(this).apply {
-        this.hint = hint
-        inputType = type
-        textSize = 16f
-        setTextColor(appTextColor)
-        setHintTextColor(Color.parseColor("#94A3B8"))
-        setPadding(dp(16), dp(2), dp(16), dp(2))
-        minHeight = dp(58)
-        background = shape(white, 16, border)
-    }
-
-    private fun primaryButton(label: String, onClick: () -> Unit): MaterialButton = MaterialButton(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 16f
-        typeface = Typeface.DEFAULT_BOLD
-        setTextColor(white)
-        minHeight = dp(54)
-        cornerRadius = dp(16)
-        setBackgroundColor(blue)
-        setOnClickListener { onClick() }
-    }
-
-    private fun secondaryButton(label: String, onClick: () -> Unit): MaterialButton = MaterialButton(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 16f
-        setTextColor(blue)
-        minHeight = dp(52)
-        cornerRadius = dp(16)
-        strokeWidth = dp(1)
-        strokeColor = android.content.res.ColorStateList.valueOf(border)
-        setBackgroundColor(white)
-        setOnClickListener { onClick() }
-    }
-
-    private fun infoCard(icon: String, title: String, subtitle: String, onClick: () -> Unit): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = shape(white, 20, border)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { onClick() }
-
-            addView(TextView(this@MainActivity).apply {
-                text = icon
-                textSize = 25f
-                gravity = Gravity.CENTER
-                background = shape(blueSoft, 15)
-            }, LinearLayout.LayoutParams(dp(54), dp(54)))
-
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(this@MainActivity).apply {
-                    text = title
-                    textSize = 16f
-                    typeface = Typeface.DEFAULT_BOLD
-                    setTextColor(appTextColor)
-                })
-                addView(TextView(this@MainActivity).apply {
-                    text = subtitle
-                    textSize = 13f
-                    setTextColor(muted)
-                    maxLines = 2
-                }, lp(top = 3))
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = dp(14)
-            })
-
-            addView(TextView(this@MainActivity).apply {
-                text = "›"
-                textSize = 30f
-                setTextColor(Color.parseColor("#94A3B8"))
-            })
-        }
-    }
-
-    private fun showLogin() {
-        val (scroll, box) = screen()
-        appBrand(box, "Masuk untuk mengakses ujian dan hasil belajar")
-
-        box.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = shape(white, 24, border)
-            setPadding(dp(18), dp(20), dp(18), dp(20))
-
-            addView(TextView(this@MainActivity).apply {
-                text = "Selamat datang 👋"
-                textSize = 20f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(appTextColor)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Gunakan akun yang sudah terdaftar."
-                textSize = 14f
-                setTextColor(muted)
-            }, lp(top = 4, bottom = 16))
-
-            val email = modernInput("Email", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-            val password = modernInput("Password", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
-            addView(email, lp(bottom = 12))
-            addView(password, lp(bottom = 16))
-            addView(primaryButton("Masuk") {
-                if (email.text.isBlank() || password.text.isBlank()) {
-                    toast("Email dan password wajib diisi")
-                } else {
-                    lifecycleScope.launch {
-                        try {
-                            val r = GasApi.post("login", mapOf(
-                                "email" to email.text.toString().trim(),
-                                "password" to password.text.toString()
-                            ))
-                            if (r.optBoolean("ok")) {
-                                currentEmail = email.text.toString().trim()
-                                currentName = r.optString("name", currentEmail)
-                                showHome()
-                            } else {
-                                toast(r.optString("message", "Login gagal"))
+        Column(modifier = screenPadding()) {
+            AppBrand("Masuk untuk mengakses ujian dan hasil belajar")
+            Spacer(Modifier.height(28.dp))
+            SoftCard {
+                Text("Selamat datang \uD83D\uDC4B", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = UjianColors.TextPrimary)
+                Spacer(Modifier.height(4.dp))
+                Text("Gunakan akun yang sudah terdaftar.", fontSize = 14.sp, color = UjianColors.TextMuted)
+                Spacer(Modifier.height(16.dp))
+                ModernTextField(email, { email = it }, "Email", keyboardType = KeyboardType.Email)
+                Spacer(Modifier.height(12.dp))
+                ModernTextField(password, { password = it }, "Password", isPassword = true)
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton("Masuk", loading = loading) {
+                    if (email.isBlank() || password.isBlank()) {
+                        toast("Email dan password wajib diisi")
+                    } else {
+                        loading = true
+                        scope.launch {
+                            try {
+                                val r = GasApi.post("login", mapOf("email" to email.trim(), "password" to password))
+                                if (r.optBoolean("ok")) {
+                                    currentEmail = email.trim()
+                                    currentName = r.optString("name", currentEmail)
+                                    screen = AppScreen.Home
+                                } else {
+                                    toast(r.optString("message", "Login gagal"))
+                                }
+                            } catch (e: Exception) {
+                                toast(e.message ?: "Gagal terhubung")
+                            } finally {
+                                loading = false
                             }
-                        } catch (e: Exception) {
-                            toast(e.message ?: "Gagal terhubung")
                         }
                     }
                 }
-            })
-            addView(secondaryButton("Buat akun baru") { showRegister() }, lp(top = 10))
-        }, lp(top = 28))
-
-        box.addView(TextView(this).apply {
-            text = "Ujian GAS • Google Apps Script"
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(muted)
-        }, lp(top = 22))
-        setScreen(scroll, box)
-    }
-
-    private fun showRegister() {
-        val (scroll, box) = screen()
-        box.addView(sectionTitle("Buat akun", "Daftar untuk mengikuti ujian"))
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = shape(white, 24, border)
-            setPadding(dp(18), dp(20), dp(18), dp(20))
-        }
-        val name = modernInput("Nama lengkap")
-        val email = modernInput("Email", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
-        val password = modernInput("Password", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        card.addView(name, lp(bottom = 12)); card.addView(email, lp(bottom = 12)); card.addView(password, lp(bottom = 16))
-        card.addView(primaryButton("Daftar") {
-            lifecycleScope.launch {
-                try {
-                    val r = GasApi.post("register", mapOf(
-                        "name" to name.text.toString(), "email" to email.text.toString().trim(), "password" to password.text.toString()
-                    ))
-                    toast(r.optString("message", "Selesai"))
-                    if (r.optBoolean("ok")) showLogin()
-                } catch (e: Exception) { toast(e.message ?: "Gagal") }
+                Spacer(Modifier.height(10.dp))
+                SecondaryButton("Buat akun baru") { screen = AppScreen.Register }
             }
-        })
-        card.addView(secondaryButton("Kembali ke login") { showLogin() }, lp(top = 10))
-        box.addView(card, lp(top = 24))
-        setScreen(scroll, box)
+            Spacer(Modifier.height(22.dp))
+            Text(
+                "Ujian GAS \u2022 Google Apps Script",
+                fontSize = 13.sp,
+                color = UjianColors.TextMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 
-    private fun showHome() {
-        val (scroll, box) = screen()
-        box.addView(TextView(this).apply {
-            text = "Halo,"
-            textSize = 16f
-            setTextColor(muted)
-        })
-        box.addView(TextView(this).apply {
-            text = currentName.ifBlank { currentEmail }
-            textSize = 28f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(navy)
-            maxLines = 1
-        }, lp(top = 2))
-        box.addView(TextView(this).apply {
-            text = "Apa yang ingin kamu lakukan hari ini?"
-            textSize = 15f
-            setTextColor(muted)
-        }, lp(top = 4, bottom = 22))
+    @Composable
+    private fun RegisterScreen() {
+        var name by remember { mutableStateOf("") }
+        var email by remember { mutableStateOf("") }
+        var password by remember { mutableStateOf("") }
+        var loading by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
 
-        box.addView(infoCard("✉️", "Undangan Ujian", "Lihat undangan dan jadwal ujian", ::showInvitations), lp(bottom = 12))
-        box.addView(infoCard("📝", "Kerjakan Ujian", "Mulai ujian yang tersedia", ::showExams), lp(bottom = 12))
-        box.addView(infoCard("📊", "Nilai Otomatis", "Lihat hasil dan nilai ujian", ::showResults), lp(bottom = 12))
-        box.addView(infoCard("🔔", "Pengingat", "Cek pengingat ujian mendatang", ::showReminders), lp(bottom = 22))
-        box.addView(secondaryButton("Keluar") { currentEmail = ""; currentName = ""; showLogin() })
-        setScreen(scroll, box)
+        Column(modifier = screenPadding()) {
+            SectionTitle("Buat akun", "Daftar untuk mengikuti ujian")
+            Spacer(Modifier.height(24.dp))
+            SoftCard {
+                ModernTextField(name, { name = it }, "Nama lengkap")
+                Spacer(Modifier.height(12.dp))
+                ModernTextField(email, { email = it }, "Email", keyboardType = KeyboardType.Email)
+                Spacer(Modifier.height(12.dp))
+                ModernTextField(password, { password = it }, "Password", isPassword = true)
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton("Daftar", loading = loading) {
+                    loading = true
+                    scope.launch {
+                        try {
+                            val r = GasApi.post("register", mapOf("name" to name, "email" to email.trim(), "password" to password))
+                            toast(r.optString("message", "Selesai"))
+                            if (r.optBoolean("ok")) screen = AppScreen.Login
+                        } catch (e: Exception) {
+                            toast(e.message ?: "Gagal")
+                        } finally {
+                            loading = false
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                SecondaryButton("Kembali ke login") { screen = AppScreen.Login }
+            }
+        }
     }
 
-    private fun showInvitations() = simpleList("Undangan Ujian", "invitations", "📭", "Belum ada undangan untuk saat ini.")
+    // ------------------------------------------------------------------
+    // HOME
+    // ------------------------------------------------------------------
+    @Composable
+    private fun HomeScreen() {
+        Column(modifier = screenPadding()) {
+            Text("Halo,", fontSize = 16.sp, color = UjianColors.TextMuted)
+            Text(
+                currentName.ifBlank { currentEmail },
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = UjianColors.Navy,
+                maxLines = 1
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("Apa yang ingin kamu lakukan hari ini?", fontSize = 15.sp, color = UjianColors.TextMuted)
+            Spacer(Modifier.height(22.dp))
 
-    private fun showExams() {
+            InfoCard("\u2709\uFE0F", "Undangan Ujian", "Lihat undangan dan jadwal ujian") {
+                openSimpleList("Undangan Ujian", "invitations", "\uD83D\uDCED", "Belum ada undangan untuk saat ini.")
+            }
+            Spacer(Modifier.height(12.dp))
+            InfoCard("\uD83D\uDCDD", "Kerjakan Ujian", "Mulai ujian yang tersedia") { openExamList() }
+            Spacer(Modifier.height(12.dp))
+            InfoCard("\uD83D\uDCCA", "Nilai Otomatis", "Lihat hasil dan nilai ujian") {
+                openSimpleList("Hasil & Nilai", "results", "\uD83D\uDCCA", "Belum ada hasil ujian.")
+            }
+            Spacer(Modifier.height(12.dp))
+            InfoCard("\uD83D\uDD14", "Pengingat", "Cek pengingat ujian mendatang") {
+                openSimpleList("Pengingat Ujian", "reminders", "\uD83D\uDD14", "Belum ada pengingat.")
+            }
+            Spacer(Modifier.height(22.dp))
+            SecondaryButton("Keluar") {
+                currentEmail = ""
+                currentName = ""
+                screen = AppScreen.Login
+            }
+        }
+    }
+
+    private fun openSimpleList(header: String, action: String, icon: String, empty: String) {
+        screen = AppScreen.SimpleList(header, action, icon, empty)
+        listLoading = true
+        lifecycleScope.launch {
+            try {
+                val r = GasApi.post(action, mapOf("email" to currentEmail))
+                val arr = r.optJSONArray("data") ?: JSONArray()
+                listItems = (0 until arr.length()).map { arr.getJSONObject(it) }
+            } catch (e: Exception) {
+                toast(e.message ?: "Gagal")
+            } finally {
+                listLoading = false
+            }
+        }
+    }
+
+    @Composable
+    private fun SimpleListScreen(header: String, icon: String, emptyText: String) {
+        Column(modifier = screenPadding()) {
+            SectionTitle(header)
+            Spacer(Modifier.height(18.dp))
+            if (listLoading) {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = UjianColors.Blue)
+                }
+            } else if (listItems.isEmpty()) {
+                EmptyState(icon, emptyText, "Silakan cek kembali nanti.")
+            } else {
+                listItems.forEach { o ->
+                    SoftCard(modifier = Modifier.padding(top = 12.dp), padding = 16) {
+                        Text(o.optString("text", o.toString()), fontSize = 16.sp, color = UjianColors.TextPrimary)
+                    }
+                }
+            }
+            Spacer(Modifier.height(22.dp))
+            SecondaryButton("Kembali ke menu") { screen = AppScreen.Home }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // DAFTAR UJIAN
+    // ------------------------------------------------------------------
+    private fun openExamList() {
+        screen = AppScreen.ExamList
+        listLoading = true
         lifecycleScope.launch {
             try {
                 val r = GasApi.post("exams", mapOf("email" to currentEmail))
                 val arr = r.optJSONArray("data") ?: JSONArray()
-                val (scroll, box) = screen()
-                box.addView(sectionTitle("Daftar Ujian", "Pilih ujian yang ingin dikerjakan"))
-                if (arr.length() == 0) emptyState(box, "📝", "Belum ada ujian", "Ujian akan muncul di sini saat tersedia.")
-                for (i in 0 until arr.length()) {
+                examListItems = (0 until arr.length()).map { i ->
                     val o = arr.getJSONObject(i)
-                    if (o.optBoolean("completed")) {
-                        val nilai = if (o.isNull("nilai")) "-" else o.optString("nilai")
-                        box.addView(
-                            infoCard("✅", o.optString("title"), "Sudah dikumpulkan • Nilai: $nilai") {
-                                toast("Ujian ini sudah dikumpulkan, tidak bisa dikerjakan ulang.")
-                                showResults()
-                            },
-                            lp(top = 14)
-                        )
-                    } else {
-                        box.addView(
-                            infoCard("📝", o.optString("title"), "Durasi ${o.optString("duration")} menit") { showExam(o) },
-                            lp(top = 14)
-                        )
-                    }
+                    ExamListItem(
+                        raw = o,
+                        id = o.optString("id"),
+                        title = o.optString("title"),
+                        durationMinutes = o.optString("duration"),
+                        completed = o.optBoolean("completed"),
+                        nilai = if (o.isNull("nilai")) "-" else o.optString("nilai")
+                    )
                 }
-                box.addView(secondaryButton("Kembali") { showHome() }, lp(top = 22))
-                setScreen(scroll, box)
-            } catch (e: Exception) { toast(e.message ?: "Gagal") }
+            } catch (e: Exception) {
+                toast(e.message ?: "Gagal")
+            } finally {
+                listLoading = false
+            }
         }
     }
 
-    private fun showExam(exam: JSONObject) {
+    @Composable
+    private fun ExamListScreen() {
+        Column(modifier = screenPadding()) {
+            SectionTitle("Daftar Ujian", "Pilih ujian yang ingin dikerjakan")
+            Spacer(Modifier.height(18.dp))
+            if (listLoading) {
+                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = UjianColors.Blue)
+                }
+            } else if (examListItems.isEmpty()) {
+                EmptyState("\uD83D\uDCDD", "Belum ada ujian", "Ujian akan muncul di sini saat tersedia.")
+            } else {
+                examListItems.forEach { item ->
+                    Spacer(Modifier.height(14.dp))
+                    if (item.completed) {
+                        InfoCard("\u2705", item.title, "Sudah dikumpulkan \u2022 Nilai: ${item.nilai}", accent = UjianColors.Success.copy(alpha = 0.12f)) {
+                            toast("Ujian ini sudah dikumpulkan, tidak bisa dikerjakan ulang.")
+                            openSimpleList("Hasil & Nilai", "results", "\uD83D\uDCCA", "Belum ada hasil ujian.")
+                        }
+                    } else {
+                        InfoCard("\uD83D\uDCDD", item.title, "Durasi ${item.durationMinutes} menit") {
+                            startExam(item.raw)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(22.dp))
+            SecondaryButton("Kembali") { screen = AppScreen.Home }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // AMBIL SOAL & MULAI SESI
+    // ------------------------------------------------------------------
+    private fun startExam(exam: JSONObject) {
         lifecycleScope.launch {
             try {
-                // Ambil soal sekali untuk sesi ini. Jawaban disimpan berdasarkan QuestionID.
-                // "email" disertakan agar server bisa memvalidasi undangan, mengacak
-                // urutan soal per siswa, dan melacak/mengembalikan sisa waktu pengerjaan
-                // yang sesungguhnya (dihitung di server, bukan di HP).
-                val r = GasApi.post(
-                    "questions",
-                    mapOf("examId" to exam.optString("id"), "email" to currentEmail)
-                )
+                val r = GasApi.post("questions", mapOf("examId" to exam.optString("id"), "email" to currentEmail))
 
                 if (!r.optBoolean("ok", true)) {
                     if (r.optString("sessionStatus") == "TERMINATED") {
@@ -561,15 +474,11 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
                     examSubmitting = false
                 }
 
-                // Sisa waktu SELALU disinkronkan dari server setiap soal dimuat,
-                // supaya menutup lalu membuka ulang aplikasi tidak mereset timer.
                 startExamTimerFromServer(r.optLong("remainingSeconds", -1L))
 
                 examActive = true
                 terminatedShown = false
 
-                // Anti-Cheat & Exam Proctoring: aktifkan sesi memakai konfigurasi
-                // yang ditentukan Guru untuk ujian ini (bagian 9 PRD).
                 examSessionId = r.optString("sessionId")
                 examAntiCheatConfig = AntiCheatConfig.fromJson(r.optJSONObject("antiCheat"))
                 if (examSessionId.isNotBlank()) {
@@ -584,7 +493,7 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
                     )
                 }
 
-                renderExamQuestion()
+                screen = AppScreen.ExamQuestion
             } catch (e: Exception) {
                 toast(e.message ?: "Gagal memuat ujian")
             }
@@ -596,7 +505,6 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
 
         if (remainingSeconds <= 0L) {
             examRemainingMillis = 0L
-            updateExamTimerText()
             if (examActive && !examSubmitting) {
                 toast("Waktu ujian habis. Jawaban akan dikirim otomatis.")
                 submitExam(autoSubmit = true)
@@ -605,17 +513,14 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
         }
 
         examRemainingMillis = remainingSeconds * 1_000L
-        updateExamTimerText()
 
         examTimer = object : CountDownTimer(examRemainingMillis, 1_000L) {
             override fun onTick(millisUntilFinished: Long) {
                 examRemainingMillis = millisUntilFinished
-                updateExamTimerText()
             }
 
             override fun onFinish() {
                 examRemainingMillis = 0L
-                updateExamTimerText()
                 if (examActive && !examSubmitting) {
                     toast("Waktu ujian habis. Jawaban akan dikirim otomatis.")
                     submitExam(autoSubmit = true)
@@ -624,204 +529,198 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
         }.start()
     }
 
-    private fun updateExamTimerText() {
-        val totalSeconds = (examRemainingMillis / 1_000L).coerceAtLeast(0L)
+    private fun formatTimer(millis: Long): String {
+        val totalSeconds = (millis / 1_000L).coerceAtLeast(0L)
         val hours = totalSeconds / 3600L
         val minutes = (totalSeconds % 3600L) / 60L
         val seconds = totalSeconds % 60L
-        val text = if (hours > 0L) {
+        return if (hours > 0L) {
             String.format(java.util.Locale.getDefault(), "Sisa waktu %02d:%02d:%02d", hours, minutes, seconds)
         } else {
             String.format(java.util.Locale.getDefault(), "Sisa waktu %02d:%02d", minutes, seconds)
         }
-        examTimerText?.text = text
     }
 
-    private fun renderExamQuestion() {
+    // ------------------------------------------------------------------
+    // LAYAR SOAL UJIAN
+    // ------------------------------------------------------------------
+    @Composable
+    private fun ExamQuestionScreen() {
         val exam = activeExam ?: return
         if (examQuestions.length() == 0) return
         val index = examQuestionIndex.coerceIn(0, examQuestions.length() - 1)
-        examQuestionIndex = index
-        val q = examQuestions.getJSONObject(index)
-
-        val (scroll, box) = screen()
-        box.addView(sectionTitle(
-            exam.optString("title"),
-            "Soal ${index + 1} dari ${examQuestions.length()}"
-        ))
-
-        examTimerText = TextView(this).apply {
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(blue)
-            background = shape(blueSoft, 14)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
-        box.addView(examTimerText, lp(top = 14))
-        updateExamTimerText()
-
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = shape(white, 20, border)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
-        card.addView(TextView(this).apply {
-            text = "SOAL ${index + 1}"
-            textSize = 12f
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = 0.08f
-            setTextColor(blue)
-        })
-        card.addView(TextView(this).apply {
-            text = q.optString("question")
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(appTextColor)
-            antiCheat.protectFromCopyPaste(this)
-        }, lp(top = 7, bottom = 10))
-
-        val group = RadioGroup(this)
+        val q = remember(index) { examQuestions.getJSONObject(index) }
         val questionId = q.optString("id")
-        val savedAnswer = examAnswers[questionId]
-        for (letter in listOf("A", "B", "C", "D")) {
-            val rb = RadioButton(this).apply {
-                text = "$letter. ${q.optString("option$letter")}"
-                tag = letter
-                textSize = 15f
-                setTextColor(appTextColor)
-                setPadding(dp(4), dp(6), 0, dp(6))
-                isChecked = savedAnswer == letter
-                antiCheat.protectFromCopyPaste(this)
-            }
-            group.addView(rb)
-        }
-        group.setOnCheckedChangeListener { g, checkedId ->
-            if (checkedId != -1) {
-                val rb = g.findViewById<RadioButton>(checkedId)
-                if (rb != null) examAnswers[questionId] = rb.tag.toString()
-            }
-        }
-        card.addView(group)
-        box.addView(card, lp(top = 16))
+        val selectedAnswer = examAnswers[questionId]
 
-        val nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+        Column(modifier = screenPadding()) {
+            SectionTitle(exam.optString("title"), "Soal ${index + 1} dari ${examQuestions.length()}")
+            Spacer(Modifier.height(14.dp))
+            SoftPill(formatTimer(examRemainingMillis), modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(16.dp))
 
-        if (index > 0) {
-            nav.addView(secondaryButton("Sebelumnya") {
-                if (!examSubmitting) {
-                    examQuestionIndex--
-                    renderExamQuestion()
+            SoftCard {
+                Text(
+                    "SOAL ${index + 1}",
+                    color = UjianColors.Blue,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.sp
+                )
+                Spacer(Modifier.height(7.dp))
+                // Text Compose biasa TIDAK bisa di-select/copy tanpa SelectionContainer,
+                // jadi soal & opsi jawaban otomatis terlindungi dari copy-paste
+                // (bagian 6.8 PRD) tanpa perlu kode tambahan.
+                Text(
+                    q.optString("question"),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = UjianColors.TextPrimary
+                )
+                Spacer(Modifier.height(14.dp))
+
+                Column(modifier = Modifier.selectableGroup()) {
+                    listOf("A", "B", "C", "D").forEach { letter ->
+                        val optionText = q.optString("option$letter")
+                        val selected = selectedAnswer == letter
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = selected,
+                                    onClick = { examAnswers[questionId] = letter }
+                                )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selected,
+                                onClick = { examAnswers[questionId] = letter },
+                                colors = RadioButtonDefaults.colors(selectedColor = UjianColors.Blue)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("$letter. $optionText", fontSize = 15.sp, color = UjianColors.TextPrimary)
+                        }
+                    }
                 }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                rightMargin = dp(6)
-            })
-        }
+            }
 
-        if (index < examQuestions.length() - 1) {
-            nav.addView(primaryButton("Berikutnya") {
-                if (!examSubmitting) {
-                    examQuestionIndex++
-                    renderExamQuestion()
+            Spacer(Modifier.height(20.dp))
+            Row {
+                if (index > 0) {
+                    SecondaryButton("Sebelumnya", modifier = Modifier.weight(1f)) {
+                        if (!examSubmitting) examQuestionIndex--
+                    }
+                    Spacer(Modifier.width(12.dp))
                 }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = if (index > 0) dp(6) else 0
-            })
-        } else {
-            nav.addView(primaryButton("Kirim Jawaban") {
-                if (!examSubmitting) confirmSubmitExam()
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = if (index > 0) dp(6) else 0
-            })
+                if (index < examQuestions.length() - 1) {
+                    PrimaryButton("Berikutnya", modifier = Modifier.weight(1f)) {
+                        if (!examSubmitting) examQuestionIndex++
+                    }
+                } else {
+                    PrimaryButton("Kirim Jawaban", modifier = Modifier.weight(1f)) {
+                        if (!examSubmitting) confirmSubmitExam()
+                    }
+                }
+            }
         }
-        box.addView(nav, lp(top = 20))
-
-        setScreen(scroll, box)
     }
 
-    /**
-     * Dialog sebelum benar-benar mengirim jawaban.
-     *
-     * Kalau masih ada soal yang belum dijawab, kirim jawaban DIBLOKIR —
-     * siswa diarahkan kembali ke soal pertama yang belum dijawab supaya
-     * diperiksa dulu, bukan ditawari opsi "kirim saja walau belum lengkap".
-     */
     private fun confirmSubmitExam() {
         val total = examQuestions.length()
         val unansweredIndexes = (0 until total).filter { idx ->
             val questionId = examQuestions.getJSONObject(idx).optString("id")
             !examAnswers.containsKey(questionId)
         }
-
         if (unansweredIndexes.isNotEmpty()) {
-            val nomorSoal = unansweredIndexes.joinToString(", ") { (it + 1).toString() }
-            AlertDialog.Builder(this)
-                .setTitle("Masih Ada Soal Belum Dijawab")
-                .setMessage(
-                    "Ada ${unansweredIndexes.size} dari $total soal yang belum dijawab " +
-                        "(nomor $nomorSoal).\n\nJawaban belum bisa dikirim. Jawab dulu semua " +
-                        "soal, baru kirim."
-                )
-                .setPositiveButton("Periksa Soal") { _, _ ->
-                    examQuestionIndex = unansweredIndexes.first()
-                    renderExamQuestion()
-                }
-                .setCancelable(true)
-                .show()
-            return
+            unansweredDialog = unansweredIndexes
+        } else {
+            confirmSubmitVisible = true
         }
+    }
 
-        AlertDialog.Builder(this)
-            .setTitle("Kirim Jawaban Ujian?")
-            .setMessage(
-                "Semua $total soal sudah dijawab. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
-                    "Yakin ingin mengirim jawaban sekarang?"
-            )
-            .setPositiveButton("Kirim") { _, _ -> submitExam() }
-            .setNegativeButton("Batal, cek lagi", null)
-            .setCancelable(true)
-            .show()
+    @Composable
+    private fun UnansweredDialog(unansweredIndexes: List<Int>) {
+        val total = examQuestions.length()
+        val nomorSoal = unansweredIndexes.joinToString(", ") { (it + 1).toString() }
+        AlertDialog(
+            onDismissRequest = { unansweredDialog = null },
+            title = { Text("Masih Ada Soal Belum Dijawab", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Ada ${unansweredIndexes.size} dari $total soal yang belum dijawab (nomor $nomorSoal).\n\n" +
+                        "Jawaban belum bisa dikirim. Jawab dulu semua soal, baru kirim."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    examQuestionIndex = unansweredIndexes.first()
+                    unansweredDialog = null
+                }) { Text("Periksa Soal") }
+            }
+        )
+    }
+
+    @Composable
+    private fun ConfirmSubmitDialog() {
+        val total = examQuestions.length()
+        AlertDialog(
+            onDismissRequest = { confirmSubmitVisible = false },
+            title = { Text("Kirim Jawaban Ujian?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Semua $total soal sudah dijawab. Setelah dikirim, jawaban tidak bisa diubah lagi.\n\n" +
+                        "Yakin ingin mengirim jawaban sekarang?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmSubmitVisible = false
+                    submitExam()
+                }) { Text("Kirim") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSubmitVisible = false }) { Text("Batal, cek lagi") }
+            }
+        )
+    }
+
+    @Composable
+    private fun SubmittingScreen() {
+        Column(
+            modifier = screenPadding(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator(color = UjianColors.Blue)
+            Spacer(Modifier.height(20.dp))
+            Text("Mengirim jawaban...", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = UjianColors.TextPrimary, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(8.dp))
+            Text("Mohon tunggu sampai hasil pengiriman diterima.", fontSize = 14.sp, color = UjianColors.TextMuted, textAlign = TextAlign.Center)
+        }
     }
 
     private fun submitExam(autoSubmit: Boolean = false) {
         if (examSubmitting) return
         val exam = activeExam ?: return
         examSubmitting = true
-
-        // Tampilkan layar proses sehingga tombol tidak bisa ditekan berulang.
-        val (scroll, box) = screen()
-        box.gravity = Gravity.CENTER
-        box.addView(TextView(this).apply {
-            text = "Mengirim jawaban..."
-            textSize = 20f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(appTextColor)
-        })
-        box.addView(TextView(this).apply {
-            text = "Mohon tunggu sampai hasil pengiriman diterima."
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setTextColor(muted)
-        }, lp(top = 8))
-        setScreen(scroll, box)
+        screen = AppScreen.Submitting
 
         lifecycleScope.launch {
             try {
                 val answersJson = JSONObject()
                 examAnswers.forEach { (questionId, answer) -> answersJson.put(questionId, answer) }
-                val res = GasApi.post("submit", mapOf(
-                    "email" to currentEmail,
-                    "examId" to exam.optString("id"),
-                    "answers" to answersJson.toString()
-                ))
+                val res = GasApi.post(
+                    "submit",
+                    mapOf(
+                        "email" to currentEmail,
+                        "examId" to exam.optString("id"),
+                        "answers" to answersJson.toString()
+                    )
+                )
                 if (res.optBoolean("ok")) {
                     examTimer?.cancel()
                     examTimer = null
-                    examTimerText = null
                     examRemainingMillis = 0L
                     examActive = false
                     activeExam = null
@@ -831,65 +730,138 @@ class MainActivity : AppCompatActivity(), AntiCheatListener {
                     examSubmitting = false
                     antiCheat.stopSession()
                     toast(res.optString("message", "Jawaban berhasil dikirim"))
-                    showHome()
+                    screen = AppScreen.Home
                 } else {
                     examSubmitting = false
                     toast(res.optString("message", "Gagal mengirim jawaban"))
-                    renderExamQuestion()
+                    screen = AppScreen.ExamQuestion
                 }
             } catch (e: Exception) {
                 examSubmitting = false
                 toast(e.message ?: "Gagal mengirim jawaban")
                 // Jawaban tetap berada di examAnswers agar siswa tidak mengulang.
-                renderExamQuestion()
+                screen = AppScreen.ExamQuestion
             }
         }
     }
 
-    private fun emptyState(box: LinearLayout, icon: String, title: String, subtitle: String) {
-        box.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = shape(white, 22, border)
-            setPadding(dp(24), dp(30), dp(24), dp(30))
-            addView(TextView(this@MainActivity).apply { text = icon; textSize = 42f; gravity = Gravity.CENTER })
-            addView(TextView(this@MainActivity).apply {
-                text = title; textSize = 18f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setTextColor(appTextColor)
-            }, lp(top = 8))
-            addView(TextView(this@MainActivity).apply {
-                text = subtitle; textSize = 14f; gravity = Gravity.CENTER; setTextColor(muted)
-            }, lp(top = 4))
-        }, lp(top = 22))
+    // ------------------------------------------------------------------
+    // TERMINATED
+    // ------------------------------------------------------------------
+    private fun showExamTerminated(message: String) {
+        if (terminatedShown) return
+        terminatedShown = true
+        lockDialogVisible = false
+        examTimer?.cancel()
+        examTimer = null
+        examActive = false
+        antiCheat.stopSession()
+        screen = AppScreen.Terminated(message)
     }
 
-    private fun showResults() = simpleList("Hasil & Nilai", "results", "📊", "Belum ada hasil ujian.")
-    private fun showReminders() = simpleList("Pengingat Ujian", "reminders", "🔔", "Belum ada pengingat.")
-
-    private fun simpleList(header: String, action: String, icon: String, empty: String) {
-        lifecycleScope.launch {
-            try {
-                val r = GasApi.post(action, mapOf("email" to currentEmail))
-                val arr = r.optJSONArray("data") ?: JSONArray()
-                val (scroll, box) = screen()
-                box.addView(sectionTitle(header))
-                if (arr.length() == 0) emptyState(box, icon, empty, "Silakan cek kembali nanti.")
-                for (i in 0 until arr.length()) {
-                    val o = arr.getJSONObject(i)
-                    box.addView(LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        background = shape(white, 18, border)
-                        setPadding(dp(16), dp(16), dp(16), dp(16))
-                        addView(TextView(this@MainActivity).apply {
-                            text = o.optString("text", o.toString())
-                            textSize = 16f
-                            setTextColor(appTextColor)
-                        })
-                    }, lp(top = 14))
-                }
-                box.addView(secondaryButton("Kembali ke menu") { showHome() }, lp(top = 22))
-                setScreen(scroll, box)
-            } catch (e: Exception) { toast(e.message ?: "Gagal") }
+    @Composable
+    private fun TerminatedScreen(message: String) {
+        Column(
+            modifier = screenPadding(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Default.Warning, contentDescription = null, tint = UjianColors.Danger, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("UJIAN DIHENTIKAN", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = UjianColors.Danger, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "$message\n\nJawaban terakhir yang sempat tersimpan telah diamankan. Hubungi pengawas untuk informasi lebih lanjut.",
+                fontSize = 14.sp,
+                color = UjianColors.TextMuted,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(20.dp))
+            PrimaryButton("Kembali ke Menu") {
+                terminatedShown = false
+                activeExam = null
+                examQuestions = JSONArray()
+                examAnswers.clear()
+                examQuestionIndex = 0
+                screen = AppScreen.Home
+            }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // DIALOG ANTI-CHEAT
+    // ------------------------------------------------------------------
+    @Composable
+    private fun WarningDialog(type: String, count: Int, max: Int) {
+        AlertDialog(
+            onDismissRequest = { },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = UjianColors.Warning) },
+            title = { Text("PERINGATAN", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Anda terdeteksi melakukan pelanggaran ujian ($type).\n\n" +
+                        "Pelanggaran: $count / $max\n\n" +
+                        "Tetap berada di aplikasi ujian."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { warningInfo = null }) { Text("LANJUTKAN") }
+            }
+        )
+    }
+
+    @Composable
+    private fun LockDialog() {
+        AlertDialog(
+            onDismissRequest = { },
+            icon = { Icon(Icons.Default.Lock, contentDescription = null, tint = UjianColors.Danger) },
+            title = { Text("UJIAN DIKUNCI", fontWeight = FontWeight.Bold, color = UjianColors.Danger) },
+            text = {
+                Column {
+                    Text(
+                        "Batas pelanggaran telah tercapai.\n\nHubungi pengawas untuk melanjutkan ujian, lalu masukkan PIN Pengawas di bawah ini.",
+                        color = UjianColors.TextMuted,
+                        fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    ModernTextField(
+                        value = lockPinValue,
+                        onValueChange = { lockPinValue = it; lockPinError = null },
+                        label = "PIN Pengawas",
+                        isPassword = true,
+                        keyboardType = KeyboardType.NumberPassword
+                    )
+                    lockPinError?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = UjianColors.Danger, fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !lockChecking,
+                    onClick = {
+                        val pin = lockPinValue.trim()
+                        if (pin.isBlank()) {
+                            lockPinError = "PIN Pengawas wajib diisi."
+                            return@TextButton
+                        }
+                        lockChecking = true
+                        lockPinError = "Memeriksa PIN..."
+                        antiCheat.attemptUnlock(pin) { success, message ->
+                            runOnUiThread {
+                                lockChecking = false
+                                if (success) {
+                                    lockDialogVisible = false
+                                } else {
+                                    lockPinError = message
+                                }
+                            }
+                        }
+                    }
+                ) { Text("BUKA UJIAN") }
+            }
+        )
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
