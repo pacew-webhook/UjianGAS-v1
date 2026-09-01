@@ -788,7 +788,19 @@ function append_(sheetName, obj) {
       return obj[h] !== undefined && obj[h] !== null ? obj[h] : '';
     });
 
-    sheet.appendRow(values);
+    const startRow = sheet.getLastRow() + 1;
+
+    // Cegah Google Sheets otomatis mengonversi string yang berbentuk
+    // tanggal/jam (mis. "2026-09-01") menjadi tipe Date. Kalau dibiarkan,
+    // pembacaan ulang di verifikasi (rows_) akan menghasilkan objek Date
+    // yang tidak lagi sama secara string dengan data aslinya.
+    headers.forEach(function(h, i) {
+      if (typeof values[i] === 'string') {
+        sheet.getRange(startRow, i + 1).setNumberFormat('@');
+      }
+    });
+
+    sheet.getRange(startRow, 1, 1, headers.length).setValues([values]);
     SpreadsheetApp.flush();
 
     // Verifikasi fisik: data yang baru ditulis harus terbaca kembali dari Sheet.
@@ -818,7 +830,14 @@ function updateById_(sheetName, idField, id, data) {
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     headers.forEach(function(h, i) {
       if (Object.prototype.hasOwnProperty.call(data, h)) {
-        sheet.getRange(row.__row, i + 1).setValue(data[h]);
+        const cell = sheet.getRange(row.__row, i + 1);
+        // Sama seperti di append_: paksa format Plain Text untuk nilai
+        // string supaya Sheets tidak mengonversinya jadi Date secara diam-diam
+        // (penyebab error "Perubahan gagal diverifikasi pada kolom ...").
+        if (typeof data[h] === 'string') {
+          cell.setNumberFormat('@');
+        }
+        cell.setValue(data[h]);
       }
     });
     SpreadsheetApp.flush();
@@ -3924,7 +3943,12 @@ function updateByIdUnlocked_(sheetName, idField, id, data) {
   const updatedRow = values[rowNumber - 1].slice();
   Object.keys(data).forEach(function(field) {
     const col = headers.indexOf(field);
-    if (col >= 0) updatedRow[col] = data[field];
+    if (col >= 0) {
+      updatedRow[col] = data[field];
+      if (typeof data[field] === 'string') {
+        sheet.getRange(rowNumber, col + 1).setNumberFormat('@');
+      }
+    }
   });
   sheet.getRange(rowNumber, 1, 1, headers.length).setValues([updatedRow]);
 }
