@@ -114,17 +114,20 @@ Status per revisi terbaru:
 - ✅ **Validasi waktu ujian di server** — `getStudentQuestionsApi_` dan `submitStudentExamApi_` sekarang mengecek `Tanggal`/`JamMulai`/`JamSelesai` ujian terhadap waktu server (`isExamWithinWindow_`), bukan hanya divalidasi di Android. Submit diberi toleransi 120 detik untuk keterlambatan jaringan.
 - ✅ **Validasi undangan saat ambil soal** — `getStudentQuestionsApi_` sekarang juga mengecek siswa memang diundang ke ujian tersebut (sebelumnya hanya dicek saat submit).
 - ✅ **Pengacakan soal per siswa** — urutan soal diacak per siswa dengan seed deterministik `StudentID:ExamID` (`seededShuffle_`), supaya tidak mudah saling contek dari urutan, tapi tetap konsisten kalau soal dimuat ulang.
-- ⚠️ Masih jadi rekomendasi untuk produksi dengan kebutuhan keamanan tinggi: rate limiting/lock akun setelah percobaan login gagal berulang, token/session yang lebih ketat, dan audit log aktivitas admin.
+- ✅ **Waktu mulai per siswa dilacak di server** — `MulaiPada` dicatat sekali di baris `Undangan` saat siswa pertama kali membuka soal (`getOrStartAttempt_`). Batas waktu pribadi = `MulaiPada + DurasiMenit`, dibatasi juga oleh `JamSelesai` ujian (`computePersonalDeadline_`). Menutup lalu membuka ulang aplikasi **tidak lagi mereset waktu pengerjaan** — timer di Android disinkronkan dari `remainingSeconds` yang dikirim server, bukan dihitung ulang dari nol di HP.
+- ⚠️ Masih jadi rekomendasi untuk produksi dengan kebutuhan keamanan tinggi: rate limiting/lock akun setelah percobaan login gagal berulang, auto-save jawaban per soal (saat ini jawaban baru terkirim sekaligus di akhir), token/session yang lebih ketat, dan audit log aktivitas admin.
 
 ## Riwayat revisi
 
 - **Revisi keamanan & anti-contek (terbaru):**
-  - Tambah kolom `Salt` di sheet `Admin` dan `Siswa` (otomatis dibuat ulang oleh `setupDatabase()`).
+  - Tambah kolom `Salt` di sheet `Admin` dan `Siswa`, kolom `MulaiPada` di sheet `Undangan` (otomatis dibuat ulang oleh `setupDatabase()`).
   - Tambah fungsi `generateSalt_`, `hashPassword_`, `verifyPassword_`, `migratePasswordIfNeeded_` di `Code.gs`.
   - Tambah fungsi `parseExamDateTime_`, `getExamWindow_`, `isExamWithinWindow_` di `Code.gs` untuk validasi jam ujian di server.
   - Tambah fungsi `stringToSeed_`, `mulberry32_`, `seededShuffle_` di `Code.gs` untuk pengacakan soal per siswa.
-  - `getStudentQuestionsApi_` kini mewajibkan parameter `email`, memvalidasi undangan, dan mengembalikan soal dalam urutan teracak per siswa.
-  - `MainActivity.kt`: pemanggilan endpoint `questions` diperbarui untuk menyertakan `email`.
+  - Tambah fungsi `findInvitation_`, `getOrStartAttempt_`, `computePersonalDeadline_` di `Code.gs` untuk melacak waktu mulai & batas waktu pribadi per siswa. Status undangan baru: `STARTED` (siswa sudah mulai mengerjakan, belum submit).
+  - `getStudentQuestionsApi_` kini mewajibkan parameter `email`, memvalidasi undangan, mencatat/menghitung waktu, dan mengembalikan soal dalam urutan teracak per siswa beserta `remainingSeconds`.
+  - `submitStudentExamApi_` menolak submit yang melewati batas waktu pribadi siswa (dengan toleransi jaringan 60 detik).
+  - `MainActivity.kt`: pemanggilan endpoint `questions` diperbarui untuk menyertakan `email`; timer ujian kini disinkronkan dari `remainingSeconds` milik server pada setiap pemuatan soal, bukan dihitung ulang dari durasi lokal.
 
 
 ## Import Bank Soal
