@@ -25,8 +25,9 @@
  * CATATAN:
  * - Tidak ada ID project/developer lama yang ditanam di source.
  * - Updater tidak mengubah Script Properties milik project target.
- * - Updater hanya mengganti file yang tercantum di FILE_MAP.
- * - File lain pada project target dipertahankan.
+ * - Updater mengganti source sesuai FILE_MAP.
+ * - Source/file lama yang tidak termasuk FILE_MAP akan dibersihkan.
+ * - appsscript.json target tetap dipertahankan.
  * - SHEET_ID bukan konfigurasi Updater; SHEET_ID dibaca oleh Code.gs target.
  */
 
@@ -74,12 +75,13 @@ function updateBackend() {
   const cfg = updaterConfig_();
 
   Logger.log('========================================');
-  Logger.log('UJIAN GAS UPDATER');
+  Logger.log('UJIAN GAS UPDATER - FINAL ZIP v3');
   Logger.log('========================================');
   Logger.log('Target Script ID: ' + cfg.targetScriptId);
   Logger.log('GitHub Base: ' + cfg.githubBase);
 
-  // 1. Baca isi project target agar file yang tidak dikelola tetap dipertahankan.
+  // 1. Baca project target hanya untuk mengambil appsscript.json.
+  //    Source lama TIDAK dipertahankan.
   const current = getProjectContent_(cfg.targetScriptId);
   const currentFiles = current.files || [];
 
@@ -87,7 +89,19 @@ function updateBackend() {
     'File target sebelum update: ' + currentFiles.length
   );
 
-  // 2. Download semua file yang dikelola dari GitHub.
+  let manifest = null;
+
+  currentFiles.forEach(function (file) {
+    if (file.name === 'appsscript.json') {
+      manifest = {
+        name: 'appsscript',
+        type: 'JSON',
+        source: file.source
+      };
+    }
+  });
+
+  // 2. Download tepat empat source dari GitHub ZIP v3.
   const downloaded = FILE_MAP.map(function (mapping) {
     const source = fetchGitHub_(cfg.githubBase, mapping.github);
 
@@ -106,42 +120,38 @@ function updateBackend() {
     };
   });
 
-  // 3. Ganti file yang sudah ada.
-  const downloadedByName = {};
-  downloaded.forEach(function (file) {
-    downloadedByName[file.name] = file;
+  // 3. Bangun isi project baru.
+  //    TIDAK memakai currentFiles sebagai basis merge.
+  const finalFiles = downloaded.slice();
+
+  if (manifest) {
+    finalFiles.push(manifest);
+    Logger.log('appsscript.json dipertahankan.');
+  } else {
+    Logger.log(
+      'PERINGATAN: appsscript.json tidak ditemukan di target.'
+    );
+  }
+
+  Logger.log('========================================');
+  Logger.log('FILE YANG AKAN MENJADI TARGET:');
+
+  finalFiles.forEach(function (file) {
+    Logger.log(
+      '- ' + file.name + ' [' + file.type + ']'
+    );
   });
 
-  const merged = currentFiles.map(function (file) {
-    if (downloadedByName[file.name]) {
-      return {
-        name: file.name,
-        type: downloadedByName[file.name].type,
-        source: downloadedByName[file.name].source
-      };
-    }
+  Logger.log('========================================');
 
-    // Pertahankan file lain apa adanya.
-    return file;
-  });
+  // 4. Replace seluruh content project.
+  //    Ini membersihkan file lama seperti Kode.gs.
+  updateProjectContent_(
+    cfg.targetScriptId,
+    finalFiles
+  );
 
-  // 4. Tambahkan file yang belum ada di target.
-  const existingNames = {};
-  merged.forEach(function (file) {
-    existingNames[file.name] = true;
-  });
-
-  downloaded.forEach(function (file) {
-    if (!existingNames[file.name]) {
-      merged.push(file);
-      Logger.log('Menambahkan file: ' + file.name);
-    }
-  });
-
-  // 5. Kirim seluruh isi project target kembali.
-  updateProjectContent_(cfg.targetScriptId, merged);
-
-  // 6. Verifikasi isi file yang dikelola.
+  // 5. Verifikasi.
   const verify = getProjectContent_(cfg.targetScriptId);
   const verifyFiles = verify.files || [];
   const verifyByName = {};
@@ -155,7 +165,7 @@ function updateBackend() {
 
     if (!actual) {
       throw new Error(
-        'Verifikasi gagal: file tidak ditemukan di target: ' +
+        'Verifikasi gagal: file tidak ditemukan: ' +
         expected.name
       );
     }
@@ -167,17 +177,38 @@ function updateBackend() {
       );
     }
 
-    Logger.log('VERIFIKASI OK: ' + expected.name);
+    Logger.log(
+      'VERIFIKASI OK: ' + expected.name
+    );
+  });
+
+  // 6. Pastikan nama source lama yang menyebabkan duplikasi
+  //    sudah tidak ada.
+  const oldNames = [
+    'Kode',
+    'Javascript',
+    'kode',
+    'javascript'
+  ];
+
+  oldNames.forEach(function (name) {
+    if (verifyByName[name]) {
+      throw new Error(
+        'FILE LAMA MASIH ADA: ' + name
+      );
+    }
   });
 
   Logger.log('========================================');
   Logger.log('UPDATE BERHASIL');
+  Logger.log('STRUKTUR ZIP v3 SUDAH DISINKRONKAN');
   Logger.log('Total file target: ' + verifyFiles.length);
   Logger.log('========================================');
 
   return {
     ok: true,
-    message: 'Update Admin Guru berhasil.',
+    message:
+      'Admin Guru berhasil disinkronkan dengan struktur ZIP v3.',
     files: downloaded.map(function (file) {
       return file.name;
     }),
