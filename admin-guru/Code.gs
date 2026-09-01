@@ -180,7 +180,8 @@ function setupDatabase() {
       'ExamID',
       'StudentID',
       'Status',
-      'SentAt'
+      'SentAt',
+      'MulaiPada'
     ],
 
     Jawaban: [
@@ -2427,6 +2428,58 @@ function studentHasExamInvitation_(
   });
 }
 
+function findInvitation_(studentId, examId) {
+
+  return rows_('Undangan').find(function(i) {
+
+    return String(i.StudentID) === String(studentId) &&
+      String(i.ExamID) === String(examId) &&
+      String(i.Status || '').toUpperCase() !== 'CANCELLED';
+
+  }) || null;
+}
+
+/**
+ * Catat waktu mulai pengerjaan siswa untuk satu ujian, HANYA sekali
+ * (percobaan pertama kali soal diminta). Panggilan berikutnya akan
+ * mengembalikan MulaiPada yang sudah tersimpan, bukan menimpanya —
+ * ini yang membuat "tutup lalu buka lagi aplikasi" tidak bisa dipakai
+ * untuk mereset waktu pengerjaan.
+ */
+function getOrStartAttempt_(invitation, exam) {
+
+  if (invitation.MulaiPada) {
+    const existing = new Date(invitation.MulaiPada);
+    if (!isNaN(existing.getTime())) return existing;
+  }
+
+  const startedAt = now_();
+
+  updateById_('Undangan', 'InviteID', invitation.InviteID, {
+    MulaiPada: startedAt,
+    Status: 'STARTED'
+  });
+
+  return startedAt;
+}
+
+/**
+ * Batas waktu pribadi siswa untuk ujian ini: mulai + durasi, tapi
+ * tidak boleh melewati jam selesai keseluruhan ujian (kalau ada).
+ */
+function computePersonalDeadline_(startedAt, exam) {
+
+  const durationMinutes = safeNumber_(exam.DurasiMenit, 0);
+  const byDuration = new Date(startedAt.getTime() + durationMinutes * 60000);
+
+  const window = getExamWindow_(exam);
+  if (window && window.end.getTime() < byDuration.getTime()) {
+    return window.end;
+  }
+
+  return byDuration;
+}
+
 function studentAlreadySubmitted_(
   studentId,
   examId
@@ -2842,7 +2895,9 @@ function getStudentQuestionsApi_(data) {
     };
   }
 
-  if (!studentHasExamInvitation_(student.StudentID, examId)) {
+  const invitation = findInvitation_(student.StudentID, examId);
+
+  if (!invitation) {
 
     return {
 
@@ -2863,6 +2918,27 @@ function getStudentQuestionsApi_(data) {
 
       message:
         'Ujian hanya dapat diakses pada jadwal yang ditentukan.',
+
+      data: []
+    };
+  }
+
+  // Catat waktu mulai (hanya sekali) dan hitung batas waktu pribadi
+  // siswa ini untuk ujian ini. Membuka ulang aplikasi TIDAK mereset
+  // waktu mulai, karena disimpan di server sejak percobaan pertama.
+  const startedAt = getOrStartAttempt_(invitation, exam);
+  const deadline = computePersonalDeadline_(startedAt, exam);
+  const remainingSeconds =
+    Math.floor((deadline.getTime() - now_().getTime()) / 1000);
+
+  if (remainingSeconds <= 0) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'Waktu pengerjaan Anda untuk ujian ini sudah habis.',
 
       data: []
     };
@@ -2915,7 +2991,13 @@ function getStudentQuestionsApi_(data) {
     ok: true,
 
     data:
-      questions
+      questions,
+
+    remainingSeconds:
+      remainingSeconds,
+
+    deadline:
+      deadline
   };
 }
 
@@ -2945,8 +3027,24 @@ function submitStudentExamApi_(data) {
     return { ok: false, message: 'Waktu ujian sudah berakhir atau belum dimulai.' };
   }
 
-  if (!studentHasExamInvitation_(student.StudentID, examId)) {
+  const invitation = findInvitation_(student.StudentID, examId);
+  if (!invitation) {
     return { ok: false, message: 'Anda tidak memiliki undangan untuk ujian ini.' };
+  }
+
+  // Kalau siswa ini sudah punya waktu mulai tercatat (dari saat ambil
+  // soal), submit tidak boleh melewati batas waktu pribadinya + sedikit
+  // toleransi jaringan. Kalau belum ada MulaiPada (kasus tidak normal),
+  // biarkan lolos ke pengecekan jendela ujian di atas saja.
+  if (invitation.MulaiPada) {
+    const startedAt = new Date(invitation.MulaiPada);
+    if (!isNaN(startedAt.getTime())) {
+      const personalDeadline = computePersonalDeadline_(startedAt, exam);
+      const graceMs = 60 * 1000;
+      if (now_().getTime() > personalDeadline.getTime() + graceMs) {
+        return { ok: false, message: 'Waktu pengerjaan Anda untuk ujian ini sudah habis.' };
+      }
+    }
   }
 
   let answers = {};
