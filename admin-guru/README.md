@@ -1,182 +1,149 @@
-# Ujian GAS — Admin Guru
+# Ujian GAS Android + Admin Guru
 
-`admin-guru/Code.gs` adalah **backend GAS resmi** untuk Admin Guru sekaligus API yang dipakai aplikasi Android.
+Project ini adalah aplikasi ujian Android yang terhubung ke **satu backend Google Apps Script (GAS)** dan **satu Google Sheets database**.
 
-## File
+## Arsitektur final
 
-- `Code.gs` — **backend utama**: `doGet()`, `doPost()`, database, API Android, dan fungsi Admin Guru.
-- `Index.html` — struktur dashboard.
-- `Style.html` — CSS dashboard.
-- `JavaScript.html` — JavaScript dashboard.
-- `Updater.gs` — tool developer opsional untuk sinkronisasi source dari GitHub.
-- `UjianGAS_Database_Template.xlsx` — template spreadsheet.
+```text
+Android APK
+   |
+   | POST: login / register / exams / questions / submit / ...
+   v
+Google Apps Script Web App
+   |
+   | admin-guru/Code.gs
+   v
+Google Sheets
+   |
+   +-- Admin
+   +-- Siswa
+   +-- Ujian
+   +-- Soal
+   +-- Undangan
+   +-- Jawaban
+   +-- Nilai
+   +-- Pengingat
+```
 
-> **Penting:** `Updater.gs` bukan backend Web App. Jangan mengganti `Code.gs` dengan `Updater.gs`.
+### Sumber backend resmi
 
-## Database
+**`admin-guru/Code.gs` adalah satu-satunya backend GAS untuk project ini.**
 
-Backend menggunakan satu Google Sheets dengan sheet:
+File lama `gas/Code.gs` yang menggunakan skema `Users / Exams / Questions` tidak lagi digunakan, karena tidak kompatibel dengan database Admin Guru.
 
-`Admin`, `Siswa`, `Ujian`, `Soal`, `Undangan`, `Jawaban`, `Nilai`, `Pengingat`.
+`admin-guru/Updater.gs` adalah tool developer opsional untuk menyinkronkan source dari GitHub ke project Apps Script. **Updater bukan backend aplikasi.**
 
-Aplikasi Android juga memakai database dan backend ini. Skema lama `Users / Exams / Questions` tidak digunakan lagi.
+## Struktur project
 
-## Cara pasang
+- `app/` — aplikasi Android Kotlin
+- `admin-guru/Code.gs` — backend GAS + Web App Admin + API Android
+- `admin-guru/Index.html` — dashboard Admin Guru
+- `admin-guru/Style.html` — CSS dashboard
+- `admin-guru/JavaScript.html` — JavaScript dashboard
+- `admin-guru/Updater.gs` — updater opsional, bukan backend
+- `admin-guru/UjianGAS_Database_Template.xlsx` — template database
+- `.github/workflows/build.yml` — build APK
 
-1. Buat atau buka Google Sheets untuk database.
-2. Jika menggunakan template XLSX, upload lalu buka/konversi menjadi Google Sheets.
+## Setup backend GAS
+
+1. Buat Google Sheets baru untuk database aplikasi.
+2. Pastikan sheet berikut tersedia:
+   `Admin`, `Siswa`, `Ujian`, `Soal`, `Undangan`, `Jawaban`, `Nilai`, `Pengingat`.
 3. Buka **Extensions → Apps Script**.
-4. Buat file server-side **`Code.gs`** dan paste isi `admin-guru/Code.gs`.
-5. Buat tiga file HTML:
+4. Buat file server-side bernama **`Code.gs`**.
+5. Paste isi `admin-guru/Code.gs`.
+6. Jika memakai dashboard Admin Guru, buat juga:
    - `Index.html`
    - `Style.html`
    - `JavaScript.html`
-6. Di `Code.gs`, ubah:
+7. Di `Code.gs`, ubah:
+   `SHEET_ID = 'ISI_GOOGLE_SHEET_ID_DI_SINI'`
+   menjadi ID Google Sheets milik kamu.
+8. Jalankan `setupDatabase()` satu kali.
+9. Buat admin awal dengan konfigurasi yang kamu inginkan, lalu jalankan `createInitialAdmin()` satu kali. Setelah selesai, ubah/nonaktifkan kredensial contoh di source.
+10. Deploy → **New deployment → Web app**.
+11. **Execute as:** Me.
+12. Atur akses sesuai kebutuhan. Untuk aplikasi siswa yang harus bisa login tanpa akun Google, gunakan pengaturan akses yang mengizinkan pengguna aplikasi mengakses Web App.
+13. Salin URL deployment yang berakhiran `/exec`.
 
-```javascript
-const SHEET_ID = 'ISI_GOOGLE_SHEET_ID_DI_SINI';
-```
-
-menjadi ID Google Sheets milik kamu.
-7. Jalankan `setupDatabase()` satu kali.
-8. Isi placeholder email/password di `createInitialAdmin()` dengan akun admin milik kamu sendiri, jalankan satu kali, lalu jangan commit kredensial asli ke GitHub.
-9. Deploy → **New deployment → Web app**.
-10. Pilih **Execute as: Me**.
-11. Atur akses sesuai kebutuhan pengguna aplikasi.
-12. Simpan URL deployment `/exec`.
+> Jangan memakai `gas/Code.gs` sebagai backend. File tersebut berasal dari skema lama dan sengaja tidak lagi disertakan dalam source final.
 
 ## Hubungkan Android
 
-Di:
+Buka:
 
 `app/src/main/java/com/example/ujian_gas/GasApi.kt`
 
-ubah:
+Isi:
 
-```text
-PASTE_GAS_WEB_APP_URL_HERE
+`PASTE_GAS_WEB_APP_URL_HERE`
+
+dengan URL Web App milik kamu, misalnya URL deployment GAS sendiri.
+
+Android dan Admin Guru sekarang harus menunjuk ke **deployment GAS yang sama**.
+
+## Build Android
+
+Untuk build lokal:
+
+```bash
+./gradlew assembleDebug
 ```
 
-menjadi URL deployment `/exec` dari **backend `Code.gs` yang sama**.
+Di Windows:
 
-Jangan menggunakan URL deployment lama dari developer/project lain.
-
-## Setelah mengubah backend
-
-Jika Web App sebelumnya sudah pernah di-deploy, buat versi deployment baru:
-
-**Deploy → Manage deployments → Edit → New version → Deploy**
-
-Pastikan Android menggunakan URL deployment yang benar.
-
-## Updater GitHub (opsional)
-
-Jika kamu memakai GitHub sebagai sumber script panjang, **tidak perlu paste `Code.gs`
-ribuan baris secara manual ke Apps Script**.
-
-Project `UjianGAS Updater` menjalankan `Updater.gs` untuk mengambil file terbaru dari
-GitHub lalu memperbarui project Apps Script Admin Guru melalui Apps Script API.
-
-### File yang disinkronkan
-
-- `admin-guru/Code.gs` → file server-side `Code`
-- `admin-guru/Index.html` → `Index`
-- `admin-guru/JavaScript.html` → `JavaScript`
-- `admin-guru/Style.html` → `Style`
-
-### Konfigurasi Updater
-
-Pada **project Apps Script UjianGAS Updater**, buka:
-
-**Project Settings → Script properties**
-
-Tambahkan:
-
-```text
-TARGET_SCRIPT_ID
+```bat
+gradlew.bat assembleDebug
 ```
 
-Nilainya adalah **Script ID project Apps Script Admin Guru** yang menjadi target.
+APK debug akan berada di:
 
-Tambahkan:
+`app/build/outputs/apk/debug/app-debug.apk`
 
-```text
-GITHUB_BASE
-```
+GitHub Actions juga dapat digunakan melalui workflow `build.yml`.
 
-Contoh format:
+## Catatan keamanan
 
-```text
-https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/admin-guru
-```
+Versi ini mempertahankan behavior aplikasi yang ada. Password siswa/admin pada database dan mekanisme session mengikuti implementasi backend saat ini. Untuk produksi dengan kebutuhan keamanan tinggi, pertimbangkan hashing yang konsisten, token/session yang lebih ketat, validasi waktu ujian di server, rate limiting, dan audit log.
 
-Ganti `USERNAME/REPOSITORY` dengan repository GitHub milik kamu sendiri.
+## Import Bank Soal
 
-### Urutan pertama kali
+Admin Guru menyediakan import Excel `.xlsx` pada menu Bank Soal. Ikuti petunjuk di `admin-guru/README.md`.
 
-1. Pastikan project Admin Guru sudah ada.
-2. Pastikan Apps Script API dapat digunakan oleh project Updater.
-3. Isi `TARGET_SCRIPT_ID` dan `GITHUB_BASE`.
-4. Jalankan `testUpdater()`.
-5. Jika test berhasil, jalankan `updateBackend()`.
-6. Setelah update selesai, buka project Admin Guru dan cek `Code`, `Index`,
-   `JavaScript`, dan `Style`.
-7. Jika backend berubah, buat **deployment/version baru** sesuai kebutuhan.
+## Prinsip konsistensi project
 
-### Update berikutnya
+Jangan membuat backend GAS kedua untuk aplikasi Android.
 
-Setiap kali source di GitHub berubah:
-
-```text
-Commit GitHub
-     ↓
-testUpdater()
-     ↓
-updateBackend()
-     ↓
-Apps Script Admin Guru diperbarui
-```
-
-Tidak perlu copy-paste `Code.gs` yang panjang secara manual.
-
-> `Updater.gs` adalah tool sinkronisasi, bukan backend Web App.
-> Backend Web App tetap `admin-guru/Code.gs`.
+Jika ada perubahan API:
+1. ubah `admin-guru/Code.gs`;
+2. pastikan `GasApi.kt` tetap memakai endpoint yang sama;
+3. uji login → daftar ujian → soal → submit;
+4. baru deploy versi GAS baru.
 
 
-## Import Bank Soal Excel
+## Alur sinkronisasi GAS dari GitHub
 
-Menu Bank Soal mendukung import `.xlsx`.
+Repository ini adalah sumber kode. Script panjang `Code.gs` tidak perlu dipaste manual
+ke editor Apps Script setiap kali ada perubahan.
 
-Kolom wajib:
-- `Pertanyaan`
-- `PilihanA`
-- `PilihanB`
-- `PilihanC`
-- `PilihanD`
-- `JawabanBenar`
+Project Apps Script Admin Guru menggunakan `Updater.gs` untuk mengambil:
+- `admin-guru/Code.gs`
+- `admin-guru/Index.html`
+- `admin-guru/JavaScript.html`
+- `admin-guru/Style.html`
 
-`Bobot` bersifat opsional.
+Konfigurasi yang bersifat rahasia/lokal disimpan di **Script Properties**, bukan di GitHub:
+- `SHEET_ID` = ID spreadsheet database Admin Guru
+- `INITIAL_ADMIN_EMAIL` = email admin awal (hanya saat membuat/reset admin awal)
+- `INITIAL_ADMIN_PASSWORD` = password admin awal (hanya saat membuat/reset admin awal)
+- `TARGET_SCRIPT_ID` = Script ID project Apps Script target untuk Updater
+- `GITHUB_BASE` = URL folder raw GitHub `admin-guru/`
 
-## Ringkasan arsitektur
-
-```text
-Android
-   |
-   +----> GAS Web App (admin-guru/Code.gs)
-                    |
-                    +----> Google Sheets
-                    |       Admin
-                    |       Siswa
-                    |       Ujian
-                    |       Soal
-                    |       Undangan
-                    |       Jawaban
-                    |       Nilai
-                    |       Pengingat
-                    |
-                    +----> Dashboard Admin Guru
-```
-
-Dengan struktur ini tidak ada lagi dua backend GAS yang berbeda di source utama.
+Dengan pola ini, update dari GitHub tidak menghapus Script Properties.
 
 
+## Sinkronisasi source GitHub ke Apps Script
+
+Jika `Code.gs` terlalu panjang untuk dipaste manual, gunakan project **UjianGAS Updater**.
+Konfigurasikan `TARGET_SCRIPT_ID` dan `GITHUB_BASE` di Script Properties Updater, lalu jalankan
+`testUpdater()` dan `updateBackend()`. Backend Web App tetap `admin-guru/Code.gs`.
