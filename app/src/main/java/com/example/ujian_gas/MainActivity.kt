@@ -343,7 +343,21 @@ class MainActivity : AppCompatActivity() {
                 if (arr.length() == 0) emptyState(box, "📝", "Belum ada ujian", "Ujian akan muncul di sini saat tersedia.")
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
-                    box.addView(infoCard("📝", o.optString("title"), "Durasi ${o.optString("duration")} menit") { showExam(o) }, lp(top = 14))
+                    if (o.optBoolean("completed")) {
+                        val nilai = if (o.isNull("nilai")) "-" else o.optString("nilai")
+                        box.addView(
+                            infoCard("✅", o.optString("title"), "Sudah dikumpulkan • Nilai: $nilai") {
+                                toast("Ujian ini sudah dikumpulkan, tidak bisa dikerjakan ulang.")
+                                showResults()
+                            },
+                            lp(top = 14)
+                        )
+                    } else {
+                        box.addView(
+                            infoCard("📝", o.optString("title"), "Durasi ${o.optString("duration")} menit") { showExam(o) },
+                            lp(top = 14)
+                        )
+                    }
                 }
                 box.addView(secondaryButton("Kembali") { showHome() }, lp(top = 22))
                 setScreen(scroll, box)
