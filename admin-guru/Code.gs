@@ -2731,6 +2731,22 @@ function getStudentExamsApi_(data) {
   const invitations =
     rows_('Undangan');
 
+  const myResults =
+    Object.fromEntries(
+      rows_('Nilai')
+        .filter(function(r) {
+
+          return String(r.StudentID) ===
+            String(student.StudentID);
+
+        })
+        .map(function(r) {
+
+          return [String(r.ExamID), r];
+
+        })
+    );
+
   const invitedExamIds =
     invitations
       .filter(function(inv) {
@@ -2764,6 +2780,8 @@ function getStudentExamsApi_(data) {
       })
       .map(function(exam) {
 
+        const myResult = myResults[String(exam.ExamID)] || null;
+
         return {
 
           id:
@@ -2788,7 +2806,13 @@ function getStudentExamsApi_(data) {
             exam.JamSelesai || '',
 
           status:
-            exam.Status
+            exam.Status,
+
+          completed:
+            !!myResult,
+
+          nilai:
+            myResult ? myResult.Nilai : null
         };
       });
 
@@ -2905,6 +2929,19 @@ function getStudentQuestionsApi_(data) {
 
       message:
         'Anda tidak memiliki undangan untuk ujian ini.',
+
+      data: []
+    };
+  }
+
+  if (studentAlreadySubmitted_(student.StudentID, examId)) {
+
+    return {
+
+      ok: false,
+
+      message:
+        'Ujian ini sudah pernah Anda kerjakan dan dikumpulkan. Lihat nilainya di menu Hasil & Nilai.',
 
       data: []
     };
