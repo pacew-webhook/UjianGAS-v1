@@ -795,7 +795,13 @@ function append_(sheetName, obj) {
     // pembacaan ulang di verifikasi (rows_) akan menghasilkan objek Date
     // yang tidak lagi sama secara string dengan data aslinya.
     headers.forEach(function(h, i) {
-      if (typeof values[i] === 'string') {
+      // Jangan paksa format Plain Text untuk string KOSONG (placeholder
+      // untuk kolom yang nanti diisi Date, mis. MulaiPada). Kalau '@'
+      // dipasang di sini, kolom itu akan terkunci sebagai teks selamanya,
+      // sehingga saat updateById_ menulis Date sungguhan ke sana nanti,
+      // Sheets menyimpannya sebagai teks (bukan serial tanggal) dan
+      // verifikasi pada updateById_ gagal (lihat komentar di updateById_).
+      if (typeof values[i] === 'string' && values[i] !== '') {
         sheet.getRange(startRow, i + 1).setNumberFormat('@');
       }
     });
@@ -832,10 +838,18 @@ function updateById_(sheetName, idField, id, data) {
       if (Object.prototype.hasOwnProperty.call(data, h)) {
         const cell = sheet.getRange(row.__row, i + 1);
         // Sama seperti di append_: paksa format Plain Text untuk nilai
-        // string supaya Sheets tidak mengonversinya jadi Date secara diam-diam
-        // (penyebab error "Perubahan gagal diverifikasi pada kolom ...").
-        if (typeof data[h] === 'string') {
+        // string NON-KOSONG supaya Sheets tidak mengonversinya jadi Date
+        // secara diam-diam. String kosong tidak perlu (dan tidak boleh)
+        // dipaksa '@', karena kolom itu (mis. MulaiPada) sering diisi
+        // string kosong dulu lalu Date sungguhan belakangan — kalau '@'
+        // terlanjur terpasang dari update sebelumnya, sel itu perlu
+        // dikembalikan ke format umum di sini supaya Date tersimpan
+        // sebagai serial tanggal, bukan teks (penyebab error
+        // "Perubahan gagal diverifikasi pada kolom ...").
+        if (typeof data[h] === 'string' && data[h] !== '') {
           cell.setNumberFormat('@');
+        } else if (data[h] instanceof Date) {
+          cell.setNumberFormat('General');
         }
         cell.setValue(data[h]);
       }
@@ -3945,8 +3959,10 @@ function updateByIdUnlocked_(sheetName, idField, id, data) {
     const col = headers.indexOf(field);
     if (col >= 0) {
       updatedRow[col] = data[field];
-      if (typeof data[field] === 'string') {
+      if (typeof data[field] === 'string' && data[field] !== '') {
         sheet.getRange(rowNumber, col + 1).setNumberFormat('@');
+      } else if (data[field] instanceof Date) {
+        sheet.getRange(rowNumber, col + 1).setNumberFormat('General');
       }
     }
   });
