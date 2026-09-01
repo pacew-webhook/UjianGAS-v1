@@ -1,4 +1,4 @@
-const SHEET_ID = '1sPB55UO_TbxQctmnHQ4FoRcPNNBuseOf';
+const SHEET_ID = 'ISI_GOOGLE_SHEET_ID_DI_SINI';
 const SESSION_PREFIX = 'UGAS_ADMIN_SESSION_';
 const SESSION_SECONDS = 21600; // 6 jam
 
@@ -257,19 +257,30 @@ function setupDatabase() {
 function createInitialAdmin() {
 
   /*
-   * Isi kredensial admin awal milik kamu sendiri sebelum menjalankan fungsi ini.
-   * Jangan commit kredensial asli ke GitHub.
+   * Kredensial admin awal TIDAK disimpan di source code.
+   * Atur melalui Google Apps Script:
+   * Project Settings -> Script properties
+   *
+   * Name:
+   *   INITIAL_ADMIN_EMAIL
+   *   INITIAL_ADMIN_PASSWORD
+   *
+   * Setelah akun berhasil dibuat, hapus kedua Script Properties tersebut.
    */
-  const email = 'ujianku784@gmail.com';
-  const password = 'ujianku123';
+  const props = PropertiesService.getScriptProperties();
 
-  if (
-    email === 'ujianku784@gmail.com' ||
-    password === 'ujianku123'
-  ) {
+  const email = String(
+    props.getProperty('INITIAL_ADMIN_EMAIL') || ''
+  ).trim();
+
+  const password =
+    props.getProperty('INITIAL_ADMIN_PASSWORD') || '';
+
+  if (!email || !password) {
     throw new Error(
-      'Isi email dan password admin awal terlebih dahulu. ' +
-      'Jangan simpan kredensial asli di source GitHub.'
+      'Kredensial admin awal belum diatur. ' +
+      'Buka Project Settings > Script properties, lalu isi ' +
+      'INITIAL_ADMIN_EMAIL dan INITIAL_ADMIN_PASSWORD.'
     );
   }
 
@@ -279,6 +290,23 @@ function createInitialAdmin() {
     password,
     'ADMIN'
   );
+}
+
+/**
+ * Hapus kredensial admin awal setelah akun berhasil dibuat.
+ * Jalankan setelah createInitialAdmin() sukses.
+ */
+function clearInitialAdminCredentials() {
+
+  const props = PropertiesService.getScriptProperties();
+
+  props.deleteProperty('INITIAL_ADMIN_EMAIL');
+  props.deleteProperty('INITIAL_ADMIN_PASSWORD');
+
+  return {
+    ok: true,
+    message: 'Kredensial admin awal sudah dihapus dari Script Properties.'
+  };
 }
 
 /* =========================
